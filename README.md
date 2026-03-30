@@ -1,6 +1,6 @@
 # Rewoven API
 
-A fast REST API serving sustainability ratings for 500+ fashion brands, built with Rust and Axum.
+A fast REST API serving sustainability ratings for 500+ fashion brands
 
 ## Running
 
@@ -11,7 +11,7 @@ cargo build --release
 ./target/release/rewoven-api
 ```
 
-The server starts on `http://0.0.0.0:3000`.
+The server starts on `http://0.0.0.0:3000`
 
 ## API Endpoints
 
@@ -19,7 +19,7 @@ The server starts on `http://0.0.0.0:3000`.
 ```
 GET /health
 ```
-Returns API status, version, and total brand count.
+Returns API status, version, and total brand count
 
 ### List Brands (Paginated)
 ```
@@ -47,19 +47,19 @@ GET /api/brands?page=1&limit=50&category=Fast+Fashion&min_score=0&max_score=100&
 ```
 GET /api/brands/:slug
 ```
-Returns full brand details. Slug is the URL-friendly brand name (e.g. `patagonia`, `h-and-m`).
+Returns full brand details. Slug is the URL-friendly brand name (e.g. `patagonia`, `h-and-m`)
 
 ### Search Brands
 ```
 GET /api/brands/search?q=zara
 ```
-Fuzzy search by brand name. Returns matches ranked by relevance (exact > starts with > contains > fuzzy).
+Fuzzy search by brand name. Returns matches ranked by relevance (exact > starts with > contains > fuzzy)
 
 ### Top Rated Brands
 ```
 GET /api/brands/top?limit=10
 ```
-Returns the highest-rated brands sorted by overall score.
+Returns the highest-rated brands sorted by overall score
 
 ### Worst Rated Brands
 ```
@@ -71,7 +71,7 @@ Returns the lowest-rated brands sorted by overall score.
 ```
 GET /api/brands/compare?brands=zara,patagonia,nike
 ```
-Compare multiple brands side by side. Pass comma-separated slugs.
+Compare multiple brands side by side. Pass comma separated slugs
 
 ### Categories
 ```
@@ -139,4 +139,4 @@ sudo systemctl enable rewoven-api
 sudo systemctl start rewoven-api
 ```
 
-5. Set up a reverse proxy with nginx or caddy to expose on port 80/443.
+5. Set up a reverse proxy with nginx or caddy to expose on port 80/443
