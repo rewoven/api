@@ -2,21 +2,26 @@ mod brands;
 
 use axum::{
     extract::{Path, Query},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber;
 
 use brands::BrandRating;
 
+// API key for scraper updates (set via SCRAPER_API_KEY env var)
+const DEFAULT_API_KEY: &str = "rewoven-scraper-2026";
+
 // Shared application state
 struct AppState {
-    brands: Vec<BrandRating>,
+    brands: RwLock<Vec<BrandRating>>,
+    api_key: String,
 }
 
 // Query parameters for listing brands
@@ -130,7 +135,13 @@ async fn main() {
     let brands = brands::load_brands();
     tracing::info!("Loaded {} brands", brands.len());
 
-    let state = Arc::new(AppState { brands });
+    let api_key = std::env::var("SCRAPER_API_KEY")
+        .unwrap_or_else(|_| DEFAULT_API_KEY.to_string());
+
+    let state = Arc::new(AppState {
+        brands: RwLock::new(brands),
+        api_key,
+    });
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -176,6 +187,10 @@ async fn main() {
             let state = Arc::clone(&state);
             move || get_categories(state)
         }))
+        .route("/api/brands/update", post({
+            let state = Arc::clone(&state);
+            move |headers, body| update_brands(headers, body, state)
+        }))
         .route("/api/stats", get({
             let state = Arc::clone(&state);
             move || get_stats(state)
@@ -190,10 +205,11 @@ async fn main() {
 
 // GET /health
 async fn health(state: Arc<AppState>) -> Json<HealthResponse> {
+    let brands = state.brands.read().await;
     Json(HealthResponse {
         status: "ok".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        total_brands: state.brands.len(),
+        total_brands: brands.len(),
     })
 }
 
@@ -202,7 +218,8 @@ async fn list_brands(
     Query(params): Query<ListParams>,
     state: Arc<AppState>,
 ) -> Json<PaginatedResponse> {
-    let mut filtered: Vec<&BrandRating> = state.brands.iter().collect();
+    let brands_guard = state.brands.read().await;
+    let mut filtered: Vec<&BrandRating> = brands_guard.iter().collect();
 
     // Filter by category
     if let Some(ref category) = params.category {
@@ -260,7 +277,8 @@ async fn get_brand(
     state: Arc<AppState>,
 ) -> Result<Json<BrandRating>, impl IntoResponse> {
     let slug_lower = slug.to_lowercase();
-    match state.brands.iter().find(|b| b.slug == slug_lower) {
+    let brands_guard = state.brands.read().await;
+    match brands_guard.iter().find(|b| b.slug == slug_lower) {
         Some(brand) => Ok(Json(brand.clone())),
         None => Err((
             StatusCode::NOT_FOUND,
@@ -282,8 +300,8 @@ async fn search_brands(
         _ => return Json(vec![]),
     };
 
-    let mut results: Vec<(usize, &BrandRating)> = state
-        .brands
+    let brands_guard = state.brands.read().await;
+    let mut results: Vec<(usize, &BrandRating)> = brands_guard
         .iter()
         .filter_map(|b| {
             let name_lower = b.name.to_lowercase();
@@ -336,7 +354,8 @@ async fn top_brands(
     state: Arc<AppState>,
 ) -> Json<Vec<BrandRating>> {
     let limit = params.limit.unwrap_or(10).min(50);
-    let mut brands: Vec<&BrandRating> = state.brands.iter().collect();
+    let brands_guard = state.brands.read().await;
+    let mut brands: Vec<&BrandRating> = brands_guard.iter().collect();
     brands.sort_by(|a, b| b.overall_score.cmp(&a.overall_score));
     Json(brands.into_iter().take(limit).cloned().collect())
 }
@@ -347,7 +366,8 @@ async fn worst_brands(
     state: Arc<AppState>,
 ) -> Json<Vec<BrandRating>> {
     let limit = params.limit.unwrap_or(10).min(50);
-    let mut brands: Vec<&BrandRating> = state.brands.iter().collect();
+    let brands_guard = state.brands.read().await;
+    let mut brands: Vec<&BrandRating> = brands_guard.iter().collect();
     brands.sort_by(|a, b| a.overall_score.cmp(&b.overall_score));
     Json(brands.into_iter().take(limit).cloned().collect())
 }
@@ -362,9 +382,10 @@ async fn compare_brands(
         None => return Json(vec![]),
     };
 
+    let brands_guard = state.brands.read().await;
     let results: Vec<BrandRating> = slugs
         .iter()
-        .filter_map(|slug| state.brands.iter().find(|b| b.slug == *slug))
+        .filter_map(|slug| brands_guard.iter().find(|b| b.slug == *slug))
         .cloned()
         .collect();
 
@@ -373,10 +394,11 @@ async fn compare_brands(
 
 // GET /api/categories
 async fn get_categories(state: Arc<AppState>) -> Json<Vec<CategoryStats>> {
+    let brands_guard = state.brands.read().await;
     let mut category_map: std::collections::HashMap<String, Vec<&BrandRating>> =
         std::collections::HashMap::new();
 
-    for brand in &state.brands {
+    for brand in brands_guard.iter() {
         category_map
             .entry(brand.category.clone())
             .or_default()
@@ -408,7 +430,8 @@ async fn get_categories(state: Arc<AppState>) -> Json<Vec<CategoryStats>> {
 
 // GET /api/stats
 async fn get_stats(state: Arc<AppState>) -> Json<OverallStats> {
-    let brands = &state.brands;
+    let brands_guard = state.brands.read().await;
+    let brands = &*brands_guard;
     let total = brands.len();
 
     let avg_score = brands.iter().map(|b| b.overall_score as f64).sum::<f64>() / total as f64;
@@ -479,7 +502,8 @@ async fn get_alternatives(
     state: Arc<AppState>,
 ) -> Result<Json<AlternativesResponse>, impl IntoResponse> {
     let slug_lower = slug.to_lowercase();
-    let brand = match state.brands.iter().find(|b| b.slug == slug_lower) {
+    let brands_guard = state.brands.read().await;
+    let brand = match brands_guard.iter().find(|b| b.slug == slug_lower) {
         Some(b) => b,
         None => {
             return Err((
@@ -504,8 +528,7 @@ async fn get_alternatives(
         _ => vec!["$", "$$", "$$$", "$$$$"],
     };
 
-    let mut alternatives: Vec<(u32, &BrandRating)> = state
-        .brands
+    let mut alternatives: Vec<(u32, &BrandRating)> = brands_guard
         .iter()
         .filter(|b| b.slug != slug_lower && b.overall_score >= min_score)
         .map(|b| {
@@ -541,6 +564,82 @@ async fn get_alternatives(
         original: brand.clone(),
         alternatives: alts,
         reason,
+    }))
+}
+
+// POST /api/brands/update - receives brand data from scraper
+#[derive(Deserialize)]
+struct UpdateRequest {
+    brands: Vec<BrandRating>,
+    mode: Option<String>, // "merge" (default) or "replace"
+}
+
+#[derive(Serialize)]
+struct UpdateResponse {
+    status: String,
+    updated: usize,
+    added: usize,
+    total: usize,
+}
+
+async fn update_brands(
+    headers: HeaderMap,
+    Json(payload): Json<UpdateRequest>,
+    state: Arc<AppState>,
+) -> Result<Json<UpdateResponse>, impl IntoResponse> {
+    // Check API key
+    let key = headers
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if key != state.api_key {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(ErrorResponse {
+                error: "Invalid API key".to_string(),
+                status: 401,
+            }),
+        ));
+    }
+
+    let mode = payload.mode.unwrap_or_else(|| "merge".to_string());
+    let mut brands = state.brands.write().await;
+
+    if mode == "replace" {
+        let count = payload.brands.len();
+        *brands = payload.brands;
+        tracing::info!("Replaced all brands with {} entries", count);
+        return Ok(Json(UpdateResponse {
+            status: "replaced".to_string(),
+            updated: 0,
+            added: count,
+            total: count,
+        }));
+    }
+
+    // Merge mode: update existing, add new
+    let mut updated = 0;
+    let mut added = 0;
+
+    for new_brand in payload.brands {
+        if let Some(existing) = brands.iter_mut().find(|b| b.slug == new_brand.slug) {
+            *existing = new_brand;
+            updated += 1;
+        } else {
+            brands.push(new_brand);
+            added += 1;
+        }
+    }
+
+    let total = brands.len();
+    tracing::info!("Brand update: {} updated, {} added, {} total", updated, added, total);
+
+    Ok(Json(UpdateResponse {
+        status: "merged".to_string(),
+        updated,
+        added,
+        total,
     }))
 }
 
