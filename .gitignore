@@ -1,1 +1,4 @@
-/target
+target/
+rewoven.db
+scraped_brands.json
+rewoven-scraper

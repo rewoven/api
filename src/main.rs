@@ -7,24 +7,24 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber;
 
 use brands::BrandRating;
 
-// API key for scraper updates (set via SCRAPER_API_KEY env var)
 const DEFAULT_API_KEY: &str = "rewoven-scraper-2026";
+const DB_PATH: &str = "rewoven.db";
 
-// Shared application state
 struct AppState {
-    brands: RwLock<Vec<BrandRating>>,
+    db: Mutex<Connection>,
     api_key: String,
 }
 
-// Query parameters for listing brands
+// Query parameters
 #[derive(Deserialize)]
 struct ListParams {
     page: Option<usize>,
@@ -36,25 +36,21 @@ struct ListParams {
     sort: Option<String>,
 }
 
-// Query parameters for search
 #[derive(Deserialize)]
 struct SearchParams {
     q: Option<String>,
 }
 
-// Query parameters for top/worst
 #[derive(Deserialize)]
 struct LimitParams {
     limit: Option<usize>,
 }
 
-// Query parameters for compare
 #[derive(Deserialize)]
 struct CompareParams {
     brands: Option<String>,
 }
 
-// Query parameters for alternatives
 #[derive(Deserialize)]
 struct AlternativesParams {
     limit: Option<usize>,
@@ -75,7 +71,7 @@ struct MaterialImpact {
     description: String,
 }
 
-// Alternatives response
+// Response types
 #[derive(Serialize)]
 struct AlternativesResponse {
     original: BrandRating,
@@ -83,7 +79,6 @@ struct AlternativesResponse {
     reason: String,
 }
 
-// Response types
 #[derive(Serialize)]
 struct PaginatedResponse {
     brands: Vec<BrandRating>,
@@ -128,18 +123,150 @@ struct HealthResponse {
     total_brands: usize,
 }
 
+#[derive(Deserialize)]
+struct UpdateRequest {
+    brands: Vec<BrandRating>,
+    mode: Option<String>,
+}
+
+#[derive(Serialize)]
+struct UpdateResponse {
+    status: String,
+    updated: usize,
+    added: usize,
+    total: usize,
+}
+
+// ─── Database ───
+
+fn init_db(conn: &Connection) {
+    conn.execute_batch("
+        CREATE TABLE IF NOT EXISTS brands (
+            slug TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            overall_score INTEGER NOT NULL,
+            grade TEXT NOT NULL,
+            environmental_score INTEGER NOT NULL,
+            labor_score INTEGER NOT NULL,
+            transparency_score INTEGER NOT NULL,
+            animal_welfare_score INTEGER NOT NULL,
+            price_range TEXT NOT NULL,
+            country TEXT NOT NULL,
+            category TEXT NOT NULL,
+            certifications TEXT NOT NULL DEFAULT '[]',
+            summary TEXT NOT NULL DEFAULT '',
+            website TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    ").expect("Failed to create brands table");
+}
+
+fn seed_db(conn: &Connection, brands: Vec<BrandRating>) {
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM brands", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    if count > 0 {
+        tracing::info!("Database already has {} brands, skipping seed", count);
+        return;
+    }
+
+    tracing::info!("Seeding database with {} brands...", brands.len());
+    let mut stmt = conn.prepare(
+        "INSERT OR IGNORE INTO brands (slug, name, overall_score, grade, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"
+    ).unwrap();
+
+    for b in &brands {
+        let certs_json = serde_json::to_string(&b.certifications).unwrap_or_else(|_| "[]".to_string());
+        stmt.execute(params![
+            b.slug, b.name, b.overall_score, b.grade,
+            b.environmental_score, b.labor_score, b.transparency_score, b.animal_welfare_score,
+            b.price_range, b.country, b.category, certs_json, b.summary, b.website
+        ]).ok();
+    }
+    tracing::info!("Seeded {} brands into database", brands.len());
+}
+
+fn db_get_all_brands(conn: &Connection) -> Vec<BrandRating> {
+    let mut stmt = conn.prepare(
+        "SELECT slug, name, overall_score, grade, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website FROM brands"
+    ).unwrap();
+
+    stmt.query_map([], |row| {
+        let certs_str: String = row.get(11)?;
+        let certifications: Vec<String> = serde_json::from_str(&certs_str).unwrap_or_default();
+        Ok(BrandRating {
+            slug: row.get(0)?,
+            name: row.get(1)?,
+            overall_score: row.get(2)?,
+            grade: row.get(3)?,
+            environmental_score: row.get(4)?,
+            labor_score: row.get(5)?,
+            transparency_score: row.get(6)?,
+            animal_welfare_score: row.get(7)?,
+            price_range: row.get(8)?,
+            country: row.get(9)?,
+            category: row.get(10)?,
+            certifications,
+            summary: row.get(12)?,
+            website: row.get(13)?,
+        })
+    }).unwrap().filter_map(|r| r.ok()).collect()
+}
+
+fn db_upsert_brand(conn: &Connection, b: &BrandRating) -> bool {
+    let certs_json = serde_json::to_string(&b.certifications).unwrap_or_else(|_| "[]".to_string());
+    let exists: bool = conn
+        .query_row("SELECT COUNT(*) FROM brands WHERE slug = ?1", params![b.slug], |row| row.get::<_, i64>(0))
+        .map(|c| c > 0)
+        .unwrap_or(false);
+
+    conn.execute(
+        "INSERT INTO brands (slug, name, overall_score, grade, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, datetime('now'))
+         ON CONFLICT(slug) DO UPDATE SET
+            name=excluded.name, overall_score=excluded.overall_score, grade=excluded.grade,
+            environmental_score=excluded.environmental_score, labor_score=excluded.labor_score,
+            transparency_score=excluded.transparency_score, animal_welfare_score=excluded.animal_welfare_score,
+            price_range=excluded.price_range, country=excluded.country, category=excluded.category,
+            certifications=excluded.certifications, summary=excluded.summary, website=excluded.website,
+            updated_at=datetime('now')",
+        params![
+            b.slug, b.name, b.overall_score, b.grade,
+            b.environmental_score, b.labor_score, b.transparency_score, b.animal_welfare_score,
+            b.price_range, b.country, b.category, certs_json, b.summary, b.website
+        ],
+    ).ok();
+
+    exists // true = updated, false = added
+}
+
+// ─── Main ───
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    let brands = brands::load_brands();
-    tracing::info!("Loaded {} brands", brands.len());
+    // Open SQLite database
+    let conn = Connection::open(DB_PATH).expect("Failed to open database");
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;").ok();
+    init_db(&conn);
+
+    // Seed from hardcoded data if empty
+    let hardcoded_brands = brands::load_brands();
+    seed_db(&conn, hardcoded_brands);
+
+    let brand_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM brands", [], |row| row.get(0))
+        .unwrap_or(0);
+    tracing::info!("Database has {} brands", brand_count);
 
     let api_key = std::env::var("SCRAPER_API_KEY")
         .unwrap_or_else(|_| DEFAULT_API_KEY.to_string());
 
     let state = Arc::new(AppState {
-        brands: RwLock::new(brands),
+        db: Mutex::new(conn),
         api_key,
     });
 
@@ -203,94 +330,80 @@ async fn main() {
     axum::serve(listener, app).await.unwrap();
 }
 
-// GET /health
+// ─── Handlers ───
+
 async fn health(state: Arc<AppState>) -> Json<HealthResponse> {
-    let brands = state.brands.read().await;
+    let db = state.db.lock().await;
+    let count: usize = db
+        .query_row("SELECT COUNT(*) FROM brands", [], |row| row.get(0))
+        .unwrap_or(0);
     Json(HealthResponse {
         status: "ok".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        total_brands: brands.len(),
+        total_brands: count,
     })
 }
 
-// GET /api/brands
 async fn list_brands(
     Query(params): Query<ListParams>,
     state: Arc<AppState>,
 ) -> Json<PaginatedResponse> {
-    let brands_guard = state.brands.read().await;
-    let mut filtered: Vec<&BrandRating> = brands_guard.iter().collect();
+    let db = state.db.lock().await;
+    let mut all_brands = db_get_all_brands(&db);
 
     // Filter by category
     if let Some(ref category) = params.category {
         let cat_lower = category.to_lowercase();
-        filtered.retain(|b| b.category.to_lowercase() == cat_lower);
+        all_brands.retain(|b| b.category.to_lowercase() == cat_lower);
     }
 
-    // Filter by score range
     if let Some(min) = params.min_score {
-        filtered.retain(|b| b.overall_score >= min);
+        all_brands.retain(|b| b.overall_score >= min);
     }
     if let Some(max) = params.max_score {
-        filtered.retain(|b| b.overall_score <= max);
+        all_brands.retain(|b| b.overall_score <= max);
     }
 
-    // Search filter
     if let Some(ref search) = params.search {
         let search_lower = search.to_lowercase();
-        filtered.retain(|b| b.name.to_lowercase().contains(&search_lower));
+        all_brands.retain(|b| b.name.to_lowercase().contains(&search_lower));
     }
 
-    // Sort
     match params.sort.as_deref() {
-        Some("score_desc") => filtered.sort_by(|a, b| b.overall_score.cmp(&a.overall_score)),
-        Some("score_asc") => filtered.sort_by(|a, b| a.overall_score.cmp(&b.overall_score)),
-        Some("name_asc") => filtered.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
-        Some("name_desc") => filtered.sort_by(|a, b| b.name.to_lowercase().cmp(&a.name.to_lowercase())),
-        _ => {} // default order
+        Some("score_desc") => all_brands.sort_by(|a, b| b.overall_score.cmp(&a.overall_score)),
+        Some("score_asc") => all_brands.sort_by(|a, b| a.overall_score.cmp(&b.overall_score)),
+        Some("name_asc") => all_brands.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+        Some("name_desc") => all_brands.sort_by(|a, b| b.name.to_lowercase().cmp(&a.name.to_lowercase())),
+        _ => {}
     }
 
-    let total = filtered.len();
+    let total = all_brands.len();
     let limit = params.limit.unwrap_or(50).min(100);
     let page = params.page.unwrap_or(1).max(1);
     let pages = if total == 0 { 1 } else { (total + limit - 1) / limit };
     let start = (page - 1) * limit;
 
-    let brands: Vec<BrandRating> = filtered
-        .into_iter()
-        .skip(start)
-        .take(limit)
-        .cloned()
-        .collect();
+    let brands: Vec<BrandRating> = all_brands.into_iter().skip(start).take(limit).collect();
 
-    Json(PaginatedResponse {
-        brands,
-        total,
-        page,
-        pages,
-    })
+    Json(PaginatedResponse { brands, total, page, pages })
 }
 
-// GET /api/brands/:slug
 async fn get_brand(
     Path(slug): Path<String>,
     state: Arc<AppState>,
 ) -> Result<Json<BrandRating>, impl IntoResponse> {
     let slug_lower = slug.to_lowercase();
-    let brands_guard = state.brands.read().await;
-    match brands_guard.iter().find(|b| b.slug == slug_lower) {
-        Some(brand) => Ok(Json(brand.clone())),
+    let db = state.db.lock().await;
+    let brands = db_get_all_brands(&db);
+    match brands.into_iter().find(|b| b.slug == slug_lower) {
+        Some(brand) => Ok(Json(brand)),
         None => Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: format!("Brand '{}' not found", slug),
-                status: 404,
-            }),
+            Json(ErrorResponse { error: format!("Brand '{}' not found", slug), status: 404 }),
         )),
     }
 }
 
-// GET /api/brands/search?q=zara
 async fn search_brands(
     Query(params): Query<SearchParams>,
     state: Arc<AppState>,
@@ -300,19 +413,20 @@ async fn search_brands(
         _ => return Json(vec![]),
     };
 
-    let brands_guard = state.brands.read().await;
-    let mut results: Vec<(usize, &BrandRating)> = brands_guard
-        .iter()
+    let db = state.db.lock().await;
+    let brands = db_get_all_brands(&db);
+    let mut results: Vec<(usize, BrandRating)> = brands
+        .into_iter()
         .filter_map(|b| {
             let name_lower = b.name.to_lowercase();
             if name_lower == query {
-                Some((0, b)) // exact match
+                Some((0, b))
             } else if name_lower.starts_with(&query) {
-                Some((1, b)) // starts with
+                Some((1, b))
             } else if name_lower.contains(&query) {
-                Some((2, b)) // contains
+                Some((2, b))
             } else if fuzzy_match(&name_lower, &query) {
-                Some((3, b)) // fuzzy
+                Some((3, b))
             } else {
                 None
             }
@@ -320,15 +434,13 @@ async fn search_brands(
         .collect();
 
     results.sort_by_key(|(priority, _)| *priority);
-    Json(results.into_iter().map(|(_, b)| b.clone()).collect())
+    Json(results.into_iter().map(|(_, b)| b).collect())
 }
 
-// Simple fuzzy matching: allows for 1-2 character differences
 fn fuzzy_match(haystack: &str, needle: &str) -> bool {
     if needle.len() < 3 {
         return false;
     }
-    // Check if most characters of needle appear in haystack in order
     let mut hay_chars = haystack.chars().peekable();
     let mut matched = 0;
     for nc in needle.chars() {
@@ -340,39 +452,34 @@ fn fuzzy_match(haystack: &str, needle: &str) -> bool {
             }
         }
     }
-    let threshold = if needle.len() <= 4 {
-        needle.len() - 1
-    } else {
-        needle.len() - 2
-    };
+    let threshold = if needle.len() <= 4 { needle.len() - 1 } else { needle.len() - 2 };
     matched >= threshold
 }
 
-// GET /api/brands/top?limit=10
 async fn top_brands(
     Query(params): Query<LimitParams>,
     state: Arc<AppState>,
 ) -> Json<Vec<BrandRating>> {
     let limit = params.limit.unwrap_or(10).min(50);
-    let brands_guard = state.brands.read().await;
-    let mut brands: Vec<&BrandRating> = brands_guard.iter().collect();
+    let db = state.db.lock().await;
+    let mut brands = db_get_all_brands(&db);
     brands.sort_by(|a, b| b.overall_score.cmp(&a.overall_score));
-    Json(brands.into_iter().take(limit).cloned().collect())
+    brands.truncate(limit);
+    Json(brands)
 }
 
-// GET /api/brands/worst?limit=10
 async fn worst_brands(
     Query(params): Query<LimitParams>,
     state: Arc<AppState>,
 ) -> Json<Vec<BrandRating>> {
     let limit = params.limit.unwrap_or(10).min(50);
-    let brands_guard = state.brands.read().await;
-    let mut brands: Vec<&BrandRating> = brands_guard.iter().collect();
+    let db = state.db.lock().await;
+    let mut brands = db_get_all_brands(&db);
     brands.sort_by(|a, b| a.overall_score.cmp(&b.overall_score));
-    Json(brands.into_iter().take(limit).cloned().collect())
+    brands.truncate(limit);
+    Json(brands)
 }
 
-// GET /api/brands/compare?brands=zara,hm,patagonia
 async fn compare_brands(
     Query(params): Query<CompareParams>,
     state: Arc<AppState>,
@@ -382,35 +489,32 @@ async fn compare_brands(
         None => return Json(vec![]),
     };
 
-    let brands_guard = state.brands.read().await;
+    let db = state.db.lock().await;
+    let brands = db_get_all_brands(&db);
     let results: Vec<BrandRating> = slugs
         .iter()
-        .filter_map(|slug| brands_guard.iter().find(|b| b.slug == *slug))
-        .cloned()
+        .filter_map(|slug| brands.iter().find(|b| b.slug == *slug).cloned())
         .collect();
 
     Json(results)
 }
 
-// GET /api/categories
 async fn get_categories(state: Arc<AppState>) -> Json<Vec<CategoryStats>> {
-    let brands_guard = state.brands.read().await;
+    let db = state.db.lock().await;
+    let brands = db_get_all_brands(&db);
     let mut category_map: std::collections::HashMap<String, Vec<&BrandRating>> =
         std::collections::HashMap::new();
 
-    for brand in brands_guard.iter() {
-        category_map
-            .entry(brand.category.clone())
-            .or_default()
-            .push(brand);
+    for brand in &brands {
+        category_map.entry(brand.category.clone()).or_default().push(brand);
     }
 
     let mut categories: Vec<CategoryStats> = category_map
         .into_iter()
-        .map(|(category, brands)| {
-            let count = brands.len();
+        .map(|(category, cat_brands)| {
+            let count = cat_brands.len();
             let avg = |f: fn(&BrandRating) -> u8| -> f64 {
-                brands.iter().map(|b| f(b) as f64).sum::<f64>() / count as f64
+                cat_brands.iter().map(|b| f(b) as f64).sum::<f64>() / count as f64
             };
             CategoryStats {
                 category,
@@ -428,11 +532,18 @@ async fn get_categories(state: Arc<AppState>) -> Json<Vec<CategoryStats>> {
     Json(categories)
 }
 
-// GET /api/stats
 async fn get_stats(state: Arc<AppState>) -> Json<OverallStats> {
-    let brands_guard = state.brands.read().await;
-    let brands = &*brands_guard;
+    let db = state.db.lock().await;
+    let brands = db_get_all_brands(&db);
     let total = brands.len();
+
+    if total == 0 {
+        return Json(OverallStats {
+            total_brands: 0, average_score: 0.0, median_score: 0,
+            grade_distribution: Default::default(), category_count: 0,
+            categories: vec![], price_range_distribution: Default::default(), country_count: 0,
+        });
+    }
 
     let avg_score = brands.iter().map(|b| b.overall_score as f64).sum::<f64>() / total as f64;
 
@@ -441,25 +552,21 @@ async fn get_stats(state: Arc<AppState>) -> Json<OverallStats> {
     let median = scores[total / 2];
 
     let mut grade_dist: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    for brand in brands {
+    for brand in &brands {
         *grade_dist.entry(brand.grade.clone()).or_insert(0) += 1;
     }
 
     let mut price_dist: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    for brand in brands {
+    for brand in &brands {
         *price_dist.entry(brand.price_range.clone()).or_insert(0) += 1;
     }
 
     let countries: std::collections::HashSet<&str> = brands.iter().map(|b| b.country.as_str()).collect();
 
-    // Build category stats
     let mut category_map: std::collections::HashMap<String, Vec<&BrandRating>> =
         std::collections::HashMap::new();
-    for brand in brands {
-        category_map
-            .entry(brand.category.clone())
-            .or_default()
-            .push(brand);
+    for brand in &brands {
+        category_map.entry(brand.category.clone()).or_default().push(brand);
     }
 
     let mut categories: Vec<CategoryStats> = category_map
@@ -495,23 +602,21 @@ async fn get_stats(state: Arc<AppState>) -> Json<OverallStats> {
     })
 }
 
-// GET /api/brands/:slug/alternatives?limit=5&min_score=50
 async fn get_alternatives(
     Path(slug): Path<String>,
     Query(params): Query<AlternativesParams>,
     state: Arc<AppState>,
 ) -> Result<Json<AlternativesResponse>, impl IntoResponse> {
     let slug_lower = slug.to_lowercase();
-    let brands_guard = state.brands.read().await;
-    let brand = match brands_guard.iter().find(|b| b.slug == slug_lower) {
-        Some(b) => b,
+    let db = state.db.lock().await;
+    let brands = db_get_all_brands(&db);
+
+    let brand = match brands.iter().find(|b| b.slug == slug_lower) {
+        Some(b) => b.clone(),
         None => {
             return Err((
                 StatusCode::NOT_FOUND,
-                Json(ErrorResponse {
-                    error: format!("Brand '{}' not found", slug),
-                    status: 404,
-                }),
+                Json(ErrorResponse { error: format!("Brand '{}' not found", slug), status: 404 }),
             ))
         }
     };
@@ -519,7 +624,6 @@ async fn get_alternatives(
     let limit = params.limit.unwrap_or(5).min(20);
     let min_score = params.min_score.unwrap_or(brand.overall_score.saturating_add(10));
 
-    // Find alternatives: same or similar category, higher score, similar price range
     let price_tiers: Vec<&str> = match brand.price_range.as_str() {
         "$" => vec!["$", "$$"],
         "$$" => vec!["$", "$$", "$$$"],
@@ -528,20 +632,17 @@ async fn get_alternatives(
         _ => vec!["$", "$$", "$$$", "$$$$"],
     };
 
-    let mut alternatives: Vec<(u32, &BrandRating)> = brands_guard
+    let mut alternatives: Vec<(u32, &BrandRating)> = brands
         .iter()
         .filter(|b| b.slug != slug_lower && b.overall_score >= min_score)
         .map(|b| {
             let mut relevance: u32 = 0;
-            // Same category = most relevant
             if b.category.to_lowercase() == brand.category.to_lowercase() {
                 relevance += 100;
             }
-            // Similar price range
             if price_tiers.contains(&b.price_range.as_str()) {
                 relevance += 50;
             }
-            // Higher score = more relevant
             relevance += b.overall_score as u32;
             (relevance, b)
         })
@@ -549,37 +650,14 @@ async fn get_alternatives(
 
     alternatives.sort_by(|a, b| b.0.cmp(&a.0));
 
-    let alts: Vec<BrandRating> = alternatives
-        .into_iter()
-        .take(limit)
-        .map(|(_, b)| b.clone())
-        .collect();
+    let alts: Vec<BrandRating> = alternatives.into_iter().take(limit).map(|(_, b)| b.clone()).collect();
 
     let reason = format!(
         "Showing sustainable alternatives to {} (score: {}/100, grade: {}). These brands score higher on sustainability while offering similar style and price range.",
         brand.name, brand.overall_score, brand.grade
     );
 
-    Ok(Json(AlternativesResponse {
-        original: brand.clone(),
-        alternatives: alts,
-        reason,
-    }))
-}
-
-// POST /api/brands/update - receives brand data from scraper
-#[derive(Deserialize)]
-struct UpdateRequest {
-    brands: Vec<BrandRating>,
-    mode: Option<String>, // "merge" (default) or "replace"
-}
-
-#[derive(Serialize)]
-struct UpdateResponse {
-    status: String,
-    updated: usize,
-    added: usize,
-    total: usize,
+    Ok(Json(AlternativesResponse { original: brand, alternatives: alts, reason }))
 }
 
 async fn update_brands(
@@ -587,7 +665,6 @@ async fn update_brands(
     Json(payload): Json<UpdateRequest>,
     state: Arc<AppState>,
 ) -> Result<Json<UpdateResponse>, impl IntoResponse> {
-    // Check API key
     let key = headers
         .get("x-api-key")
         .and_then(|v| v.to_str().ok())
@@ -596,54 +673,48 @@ async fn update_brands(
     if key != state.api_key {
         return Err((
             StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: "Invalid API key".to_string(),
-                status: 401,
-            }),
+            Json(ErrorResponse { error: "Invalid API key".to_string(), status: 401 }),
         ));
     }
 
     let mode = payload.mode.unwrap_or_else(|| "merge".to_string());
-    let mut brands = state.brands.write().await;
+    let db = state.db.lock().await;
 
     if mode == "replace" {
+        db.execute("DELETE FROM brands", []).ok();
         let count = payload.brands.len();
-        *brands = payload.brands;
+        for b in &payload.brands {
+            db_upsert_brand(&db, b);
+        }
         tracing::info!("Replaced all brands with {} entries", count);
         return Ok(Json(UpdateResponse {
-            status: "replaced".to_string(),
-            updated: 0,
-            added: count,
-            total: count,
+            status: "replaced".to_string(), updated: 0, added: count, total: count,
         }));
     }
 
-    // Merge mode: update existing, add new
+    // Merge mode
     let mut updated = 0;
     let mut added = 0;
 
-    for new_brand in payload.brands {
-        if let Some(existing) = brands.iter_mut().find(|b| b.slug == new_brand.slug) {
-            *existing = new_brand;
+    for b in &payload.brands {
+        if db_upsert_brand(&db, b) {
             updated += 1;
         } else {
-            brands.push(new_brand);
             added += 1;
         }
     }
 
-    let total = brands.len();
+    let total: usize = db
+        .query_row("SELECT COUNT(*) FROM brands", [], |row| row.get(0))
+        .unwrap_or(0);
+
     tracing::info!("Brand update: {} updated, {} added, {} total", updated, added, total);
 
-    Ok(Json(UpdateResponse {
-        status: "merged".to_string(),
-        updated,
-        added,
-        total,
-    }))
+    Ok(Json(UpdateResponse { status: "merged".to_string(), updated, added, total }))
 }
 
-// Material impact database
+// ─── Materials (still hardcoded — small static dataset) ───
+
 fn load_materials() -> Vec<MaterialImpact> {
     vec![
         MaterialImpact { name: "Conventional Cotton".into(), slug: "conventional-cotton".into(), category: "Natural".into(), co2_kg_per_kg: 8.0, water_liters_per_kg: 10000.0, biodegradable: true, recyclable: true, sustainability_score: 35, description: "Most widely used natural fiber. Extremely water-intensive and often relies on pesticides.".into() },
@@ -679,14 +750,12 @@ fn load_materials() -> Vec<MaterialImpact> {
     ]
 }
 
-// GET /api/materials
 async fn get_materials() -> Json<Vec<MaterialImpact>> {
     let mut materials = load_materials();
     materials.sort_by(|a, b| b.sustainability_score.cmp(&a.sustainability_score));
     Json(materials)
 }
 
-// GET /api/materials/:slug
 async fn get_material(
     Path(slug): Path<String>,
 ) -> Result<Json<MaterialImpact>, impl IntoResponse> {
@@ -696,10 +765,7 @@ async fn get_material(
         Some(material) => Ok(Json(material)),
         None => Err((
             StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: format!("Material '{}' not found", slug),
-                status: 404,
-            }),
+            Json(ErrorResponse { error: format!("Material '{}' not found", slug), status: 404 }),
         )),
     }
 }
