@@ -2,9 +2,9 @@ mod brands;
 
 use axum::{
     extract::{Path, Query},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
 use rusqlite::{params, Connection};
@@ -16,12 +16,10 @@ use tracing_subscriber;
 
 use brands::BrandRating;
 
-const DEFAULT_API_KEY: &str = "rewoven-scraper-2026";
 const DB_PATH: &str = "rewoven.db";
 
 struct AppState {
     db: Mutex<Connection>,
-    api_key: String,
 }
 
 // Query parameters
@@ -121,20 +119,6 @@ struct HealthResponse {
     status: String,
     version: String,
     total_brands: usize,
-}
-
-#[derive(Deserialize)]
-struct UpdateRequest {
-    brands: Vec<BrandRating>,
-    mode: Option<String>,
-}
-
-#[derive(Serialize)]
-struct UpdateResponse {
-    status: String,
-    updated: usize,
-    added: usize,
-    total: usize,
 }
 
 // ─── Database ───
@@ -262,12 +246,8 @@ async fn main() {
         .unwrap_or(0);
     tracing::info!("Database has {} brands", brand_count);
 
-    let api_key = std::env::var("SCRAPER_API_KEY")
-        .unwrap_or_else(|_| DEFAULT_API_KEY.to_string());
-
     let state = Arc::new(AppState {
         db: Mutex::new(conn),
-        api_key,
     });
 
     let cors = CorsLayer::new()
@@ -314,11 +294,7 @@ async fn main() {
             let state = Arc::clone(&state);
             move || get_categories(state)
         }))
-        .route("/api/brands/update", post({
-            let state = Arc::clone(&state);
-            move |headers, body| update_brands(headers, body, state)
-        }))
-        .route("/api/stats", get({
+.route("/api/stats", get({
             let state = Arc::clone(&state);
             move || get_stats(state)
         }))
@@ -658,59 +634,6 @@ async fn get_alternatives(
     );
 
     Ok(Json(AlternativesResponse { original: brand, alternatives: alts, reason }))
-}
-
-async fn update_brands(
-    headers: HeaderMap,
-    Json(payload): Json<UpdateRequest>,
-    state: Arc<AppState>,
-) -> Result<Json<UpdateResponse>, impl IntoResponse> {
-    let key = headers
-        .get("x-api-key")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if key != state.api_key {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse { error: "Invalid API key".to_string(), status: 401 }),
-        ));
-    }
-
-    let mode = payload.mode.unwrap_or_else(|| "merge".to_string());
-    let db = state.db.lock().await;
-
-    if mode == "replace" {
-        db.execute("DELETE FROM brands", []).ok();
-        let count = payload.brands.len();
-        for b in &payload.brands {
-            db_upsert_brand(&db, b);
-        }
-        tracing::info!("Replaced all brands with {} entries", count);
-        return Ok(Json(UpdateResponse {
-            status: "replaced".to_string(), updated: 0, added: count, total: count,
-        }));
-    }
-
-    // Merge mode
-    let mut updated = 0;
-    let mut added = 0;
-
-    for b in &payload.brands {
-        if db_upsert_brand(&db, b) {
-            updated += 1;
-        } else {
-            added += 1;
-        }
-    }
-
-    let total: usize = db
-        .query_row("SELECT COUNT(*) FROM brands", [], |row| row.get(0))
-        .unwrap_or(0);
-
-    tracing::info!("Brand update: {} updated, {} added, {} total", updated, added, total);
-
-    Ok(Json(UpdateResponse { status: "merged".to_string(), updated, added, total }))
 }
 
 // ─── Materials (still hardcoded — small static dataset) ───
