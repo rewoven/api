@@ -1,22 +1,4 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BrandRating {
-    pub name: String,
-    pub slug: String,
-    pub overall_score: u8,
-    pub grade: String,
-    pub environmental_score: u8,
-    pub labor_score: u8,
-    pub transparency_score: u8,
-    pub animal_welfare_score: u8,
-    pub price_range: String,
-    pub country: String,
-    pub category: String,
-    pub certifications: Vec<String>,
-    pub summary: String,
-    pub website: String,
-}
+use crate::models::{BrandRating, compute_grade};
 
 fn brand(
     name: &str,
@@ -32,18 +14,6 @@ fn brand(
     summary: &str,
     website: &str,
 ) -> BrandRating {
-    let grade = match overall_score {
-        90..=100 => "A+",
-        80..=89 => "A",
-        70..=79 => "B",
-        60..=69 => "C",
-        50..=59 => "C-",
-        40..=49 => "D",
-        30..=39 => "D-",
-        20..=29 => "E",
-        10..=19 => "F",
-        _ => "F-",
-    };
     BrandRating {
         name: name.to_string(),
         slug: name
@@ -56,7 +26,7 @@ fn brand(
             .filter(|c| c.is_alphanumeric() || *c == '-')
             .collect(),
         overall_score,
-        grade: grade.to_string(),
+        grade: compute_grade(overall_score).to_string(),
         environmental_score,
         labor_score,
         transparency_score,

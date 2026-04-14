@@ -1,4 +1,6 @@
 target/
 rewoven.db
+rewoven.db-shm
+rewoven.db-wal
 scraped_brands.json
 rewoven-scraper
