@@ -1,3 +1,4 @@
+mod barcode_seeds;
 mod brand_data;
 mod db;
 mod error;
@@ -5,7 +6,7 @@ mod handlers;
 mod models;
 mod state;
 
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use std::sync::Arc;
 use tower_http::cors::{AllowOrigin, CorsLayer};
@@ -30,6 +31,20 @@ async fn main() {
         db::seed_db(&conn, &brands).expect("Failed to seed database");
         let count = db::get_brand_count(&conn).unwrap_or(0);
         tracing::info!("Database has {} brands", count);
+
+        // Seed barcode prefixes (idempotent — only inserts new ones)
+        match db::seed_barcode_prefixes(&conn, barcode_seeds::SEED_PREFIXES) {
+            Ok(inserted) => {
+                let total = db::get_barcode_prefix_count(&conn).unwrap_or(0);
+                tracing::info!(
+                    "Barcode prefixes: {} new, {} total ({} in seed file)",
+                    inserted,
+                    total,
+                    barcode_seeds::count(),
+                );
+            }
+            Err(e) => tracing::error!("Failed to seed barcode prefixes: {}", e),
+        }
     }
 
     let state = Arc::new(AppState { db: pool });
@@ -67,12 +82,15 @@ async fn main() {
         .route("/api/materials/{slug}", get(handlers::materials::get_material))
         .route("/api/categories", get(handlers::stats::get_categories))
         .route("/api/stats", get(handlers::stats::get_stats))
+        .route("/api/barcode/contribute", post(handlers::barcode::contribute_barcode))
+        .route("/api/barcode/{upc}", get(handlers::barcode::lookup_barcode))
         .with_state(state)
         .layer(cors);
 
-    let addr = "0.0.0.0:3000";
+    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
+    let addr = format!("0.0.0.0:{}", port);
     tracing::info!("Rewoven API starting on {}", addr);
-    let listener = tokio::net::TcpListener::bind(addr)
+    let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .expect("Failed to bind to address");
     axum::serve(listener, app)

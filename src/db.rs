@@ -28,6 +28,42 @@ pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_brands_category ON brands(category);
         CREATE INDEX IF NOT EXISTS idx_brands_score ON brands(overall_score);
         CREATE INDEX IF NOT EXISTS idx_brands_name ON brands(name COLLATE NOCASE);
+
+        -- ── Barcode → brand mapping ──────────────────────────────────
+        -- The first 6-9 digits of a UPC/EAN are the GS1 company prefix
+        -- assigned to the manufacturer. We map prefix → brand_slug so
+        -- /api/barcode/{upc} can look up the brand without an external API.
+        --
+        -- source:    'manual'         curated by us, high confidence
+        --            'gs1'            looked up from GS1's public registry
+        --            'crowdsourced'   submitted by an app user
+        --            'partner'        added via partner integration
+        --
+        -- confidence: 0-100 — we only return matches with confidence >= 50
+        --             so a single crowdsourced report can't pollute the data.
+        CREATE TABLE IF NOT EXISTS barcode_prefixes (
+            prefix TEXT PRIMARY KEY,
+            brand_slug TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'manual',
+            confidence INTEGER NOT NULL DEFAULT 100,
+            notes TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (brand_slug) REFERENCES brands(slug)
+        );
+        CREATE INDEX IF NOT EXISTS idx_barcode_prefixes_brand ON barcode_prefixes(brand_slug);
+
+        -- A staging table for crowdsourced submissions that haven't been
+        -- promoted to the main table yet. Same prefix needs N reports
+        -- before we add it to barcode_prefixes with confidence 70.
+        CREATE TABLE IF NOT EXISTS barcode_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            prefix TEXT NOT NULL,
+            brand_slug TEXT NOT NULL,
+            user_hash TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (brand_slug) REFERENCES brands(slug)
+        );
+        CREATE INDEX IF NOT EXISTS idx_submissions_prefix ON barcode_submissions(prefix);
     ")?;
     Ok(())
 }
@@ -381,4 +417,125 @@ pub fn upsert_brand(conn: &Connection, b: &BrandRating) -> Result<(), rusqlite::
 pub fn create_pool(path: &str) -> Result<Pool<SqliteConnectionManager>, r2d2::Error> {
     let manager = SqliteConnectionManager::file(path);
     Pool::builder().max_size(8).build(manager)
+}
+
+// ─── Barcode prefix lookup ──────────────────────────────────────────
+
+/// Try matching a barcode against our prefix table. We strip non-digit
+/// characters (some scanners emit hyphens), then walk longest-to-shortest
+/// prefixes (9 → 6 digits) and return the first match with confidence
+/// >= 50. Returns the brand slug.
+pub fn find_brand_by_barcode(
+    conn: &Connection,
+    raw_barcode: &str,
+) -> Result<Option<(String, String, i64)>, rusqlite::Error> {
+    let digits: String = raw_barcode.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.len() < 6 {
+        return Ok(None);
+    }
+
+    // Try longest GS1 prefixes first (most specific wins)
+    for len in [9, 8, 7, 6].iter() {
+        if digits.len() < *len {
+            continue;
+        }
+        let prefix = &digits[..*len];
+
+        let row: Option<(String, String, i64)> = conn
+            .query_row(
+                "SELECT brand_slug, source, confidence FROM barcode_prefixes
+                 WHERE prefix = ?1 AND confidence >= 50",
+                params![prefix],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .ok();
+
+        if let Some(hit) = row {
+            return Ok(Some(hit));
+        }
+    }
+    Ok(None)
+}
+
+/// Returns total prefix count for /health-style reporting.
+pub fn get_barcode_prefix_count(conn: &Connection) -> Result<usize, rusqlite::Error> {
+    conn.query_row("SELECT COUNT(*) FROM barcode_prefixes", [], |r| r.get::<_, i64>(0))
+        .map(|n| n as usize)
+}
+
+/// Bulk-insert prefix → brand mappings. Idempotent: existing prefixes
+/// are left untouched (so re-seeding doesn't downgrade crowdsourced
+/// data that's been promoted to the main table).
+pub fn seed_barcode_prefixes(
+    conn: &Connection,
+    prefixes: &[(&str, &str, &str)], // (prefix, brand_slug, notes)
+) -> Result<usize, rusqlite::Error> {
+    let mut inserted = 0;
+    for (prefix, slug, notes) in prefixes {
+        // Skip if the brand isn't in our brands table — keeps FK clean
+        let brand_exists: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM brands WHERE slug = ?1",
+            params![slug],
+            |r| r.get(0),
+        )?;
+        if brand_exists == 0 {
+            tracing::warn!("Skipping barcode prefix {} — brand '{}' not in DB", prefix, slug);
+            continue;
+        }
+
+        let res = conn.execute(
+            "INSERT OR IGNORE INTO barcode_prefixes (prefix, brand_slug, source, confidence, notes)
+             VALUES (?1, ?2, 'manual', 100, ?3)",
+            params![prefix, slug, notes],
+        )?;
+        inserted += res;
+    }
+    Ok(inserted)
+}
+
+/// Record a crowdsourced submission. After 3 matching submissions for
+/// the same (prefix, brand), promote to the main table at confidence 70.
+pub fn submit_crowdsourced_prefix(
+    conn: &Connection,
+    prefix: &str,
+    brand_slug: &str,
+    user_hash: Option<&str>,
+) -> Result<(), rusqlite::Error> {
+    // Verify brand exists before recording
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM brands WHERE slug = ?1",
+        params![brand_slug],
+        |r| r.get(0),
+    )?;
+    if exists == 0 {
+        return Err(rusqlite::Error::InvalidParameterName(format!(
+            "Unknown brand_slug: {}",
+            brand_slug
+        )));
+    }
+
+    conn.execute(
+        "INSERT INTO barcode_submissions (prefix, brand_slug, user_hash) VALUES (?1, ?2, ?3)",
+        params![prefix, brand_slug, user_hash],
+    )?;
+
+    // If 3+ users have agreed AND this prefix isn't already in the main
+    // table at high confidence, promote it.
+    let agreement_count: i64 = conn.query_row(
+        "SELECT COUNT(DISTINCT COALESCE(user_hash, id)) FROM barcode_submissions
+         WHERE prefix = ?1 AND brand_slug = ?2",
+        params![prefix, brand_slug],
+        |r| r.get(0),
+    )?;
+
+    if agreement_count >= 3 {
+        conn.execute(
+            "INSERT OR REPLACE INTO barcode_prefixes
+             (prefix, brand_slug, source, confidence, notes)
+             VALUES (?1, ?2, 'crowdsourced', 70, 'auto-promoted from user submissions')",
+            params![prefix, brand_slug],
+        )?;
+    }
+
+    Ok(())
 }
