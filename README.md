@@ -1,6 +1,6 @@
 # Rewoven API
 
-A fast REST API serving sustainability ratings for 500+ fashion brands
+A fast REST API serving sustainability ratings for 635 fashion brands
 
 ## Running
 
@@ -103,6 +103,20 @@ Overall statistics including total brands, average/median scores, grade distribu
 | certifications | string[] | Sustainability certifications held |
 | summary | string | Brief description of sustainability practices |
 | website | string | Brand website URL |
+| rationale | string | Plain-language explanation of how the score was derived (per-dimension breakdown + disclaimer). Generated transparently from the four dimension scores, certifications, and summary. |
+
+## Methodology & Disclaimer
+
+`overall_score` is the equal-weighted average of the four dimension scores
+(environmental, labor, transparency, animal welfare), each 0–100, assigned
+from publicly available information. Every brand response includes a
+`rationale` field explaining the score.
+
+Ratings are Rewoven's editorial assessments and expressions of opinion, not
+statements of fact, provided for general information only. They may not
+reflect a brand's most recent changes. Rewoven is not affiliated with the
+brands listed; trademarks belong to their respective owners. Brands can
+request a review at arhan@rewovenapp.com.
 
 ## Deploying to VPS
 

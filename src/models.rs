@@ -36,6 +36,114 @@ pub struct BrandRating {
     pub certifications: Vec<String>,
     pub summary: String,
     pub website: String,
+    /// Human-readable explanation of how the score was derived. Generated
+    /// from the four dimension scores, certifications, and summary so every
+    /// brand has a transparent, defensible "why this score" report. Framed
+    /// as editorial opinion based on publicly available information.
+    #[serde(default)]
+    pub rationale: String,
+}
+
+// ─── Rationale / "why this score" report (derived, never persisted) ───
+
+fn overall_band(score: u8) -> &'static str {
+    match score {
+        80..=100 => "an industry leader",
+        65..=79 => "strong",
+        50..=64 => "moderate",
+        30..=49 => "below average",
+        _ => "poor",
+    }
+}
+
+fn environmental_note(score: u8) -> &'static str {
+    match score {
+        65..=100 => "strong use of lower-impact materials and documented action to cut emissions, water use, and waste",
+        50..=64 => "some lower-impact materials or efficiency efforts, with clear room to improve",
+        30..=49 => "limited publicly documented action on materials, emissions, water, or waste relative to peers",
+        _ => "little publicly available evidence of meaningful action on materials, emissions, water, or waste",
+    }
+}
+
+fn labor_note(score: u8) -> &'static str {
+    match score {
+        65..=100 => "well-documented labor standards and supply-chain oversight",
+        50..=64 => "some labor commitments with partial supply-chain oversight",
+        30..=49 => "limited public disclosure of labor standards or supply-chain auditing",
+        _ => "little publicly available evidence of enforced labor standards or independent auditing",
+    }
+}
+
+fn transparency_note(score: u8) -> &'static str {
+    match score {
+        65..=100 => "detailed public reporting and supply-chain traceability",
+        50..=64 => "partial public reporting on its supply chain",
+        30..=49 => "limited public reporting or traceability",
+        _ => "minimal public disclosure of its supply chain or practices",
+    }
+}
+
+fn animal_note(score: u8) -> &'static str {
+    match score {
+        65..=100 => "clear animal-welfare policies or avoidance of high-harm materials",
+        50..=64 => "some animal-welfare policies in place",
+        30..=49 => "limited animal-welfare policy disclosure",
+        _ => "little publicly available animal-welfare policy",
+    }
+}
+
+/// Build the transparent per-brand rationale. Every statement is either
+/// derived from our own dimension scores or a verifiable fact (certs),
+/// and the whole thing is explicitly framed as opinion — this is what
+/// keeps the ratings defensible.
+pub fn build_rationale(
+    name: &str,
+    overall: u8,
+    environmental: u8,
+    labor: u8,
+    transparency: u8,
+    animal_welfare: u8,
+    category: &str,
+    certifications: &[String],
+    summary: &str,
+) -> String {
+    let grade = compute_grade(overall);
+    let certs_line = if certifications.is_empty() {
+        "No third-party sustainability certifications are recorded for this brand.".to_string()
+    } else {
+        format!(
+            "Recognised certifications in our records: {}.",
+            certifications.join(", ")
+        )
+    };
+
+    format!(
+        "Rewoven rates {name} {overall}/100 (grade {grade}) — {band} overall for sustainability. \
+This composite is the equal-weighted average of four dimensions:\n\n\
+• Environmental ({environmental}/100): {env}.\n\
+• Labor practices ({labor}/100): {lab}.\n\
+• Transparency ({transparency}/100): {trans}.\n\
+• Animal welfare ({animal_welfare}/100): {anim}.\n\n\
+{certs_line} Assessed within the {category} category. {summary}\n\n\
+This rating is Rewoven's editorial assessment based on publicly available information and may not reflect a brand's most recent changes. \
+It is an expression of opinion, not a statement of fact, and is provided for general information only. \
+Brands may request a review at arhan@rewovenapp.com.",
+        name = name,
+        overall = overall,
+        grade = grade,
+        band = overall_band(overall),
+        environmental = environmental,
+        env = environmental_note(environmental),
+        labor = labor,
+        lab = labor_note(labor),
+        transparency = transparency,
+        trans = transparency_note(transparency),
+        animal_welfare = animal_welfare,
+        anim = animal_note(animal_welfare),
+        certs_line = certs_line,
+        category = category,
+        summary = summary,
+    )
 }
 
 #[derive(Serialize, Clone)]

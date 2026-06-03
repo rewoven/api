@@ -3,7 +3,7 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
 
-use crate::models::{BrandRating, CategoryStats, compute_grade};
+use crate::models::{BrandRating, CategoryStats, compute_grade, build_rationale};
 
 // ─── Init & Seed ───
 
@@ -100,21 +100,40 @@ fn row_to_brand(row: &rusqlite::Row) -> rusqlite::Result<BrandRating> {
     let overall_score: u8 = row.get("overall_score")?;
     let certs_str: String = row.get("certifications")?;
     let certifications: Vec<String> = serde_json::from_str(&certs_str).unwrap_or_default();
+    let name: String = row.get("name")?;
+    let environmental_score: u8 = row.get("environmental_score")?;
+    let labor_score: u8 = row.get("labor_score")?;
+    let transparency_score: u8 = row.get("transparency_score")?;
+    let animal_welfare_score: u8 = row.get("animal_welfare_score")?;
+    let category: String = row.get("category")?;
+    let summary: String = row.get("summary")?;
+    let rationale = build_rationale(
+        &name,
+        overall_score,
+        environmental_score,
+        labor_score,
+        transparency_score,
+        animal_welfare_score,
+        &category,
+        &certifications,
+        &summary,
+    );
     Ok(BrandRating {
         slug: row.get("slug")?,
-        name: row.get("name")?,
+        name,
         overall_score,
         grade: compute_grade(overall_score).to_string(),
-        environmental_score: row.get("environmental_score")?,
-        labor_score: row.get("labor_score")?,
-        transparency_score: row.get("transparency_score")?,
-        animal_welfare_score: row.get("animal_welfare_score")?,
+        environmental_score,
+        labor_score,
+        transparency_score,
+        animal_welfare_score,
         price_range: row.get("price_range")?,
         country: row.get("country")?,
-        category: row.get("category")?,
+        category,
         certifications,
-        summary: row.get("summary")?,
+        summary,
         website: row.get("website")?,
+        rationale,
     })
 }
 
