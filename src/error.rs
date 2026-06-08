@@ -25,14 +25,27 @@ impl IntoResponse for AppError {
         let (status, message) = match self {
             AppError::Db(msg) => {
                 tracing::error!("Database error: {}", msg);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal database error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal database error".to_string(),
+                )
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
             AppError::Pool(e) => {
                 tracing::error!("Connection pool error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Service temporarily unavailable".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Service temporarily unavailable".to_string(),
+                )
             }
         };
-        (status, Json(ErrorResponse { error: message, status: status.as_u16() })).into_response()
+        (
+            status,
+            Json(ErrorResponse {
+                error: message,
+                status: status.as_u16(),
+            }),
+        )
+            .into_response()
     }
 }

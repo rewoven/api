@@ -1,6 +1,11 @@
 # Rewoven API
 
-A fast REST API serving sustainability ratings for 635 fashion brands
+A fast REST API serving sustainability ratings for 635 fashion brands.
+
+- **Interactive docs:** `GET /docs` (Swagger UI) and `GET /openapi.json` (OpenAPI 3.0 spec)
+- **Versioning:** routes are served under `/v1/...` (canonical) and `/api/...` (legacy alias, kept working). Examples below show `/api` but `/v1` is identical.
+- **Rate limiting:** ~120 requests/min per IP (returns `429` when exceeded).
+- **Caching:** GET responses send `Cache-Control` + an `ETag`; send `If-None-Match` to get a `304 Not Modified` and skip the payload.
 
 [Docs](https://rewovenapp.com/api)
 
@@ -13,7 +18,7 @@ cargo build --release
 ./target/release/rewoven-api
 ```
 
-The server starts on `http://0.0.0.0:3000`
+The server starts on `http://0.0.0.0:3000`. Run the tests with `cargo test`.
 
 ## API Endpoints
 
@@ -105,10 +110,25 @@ Overall statistics including total brands, average/median scores, grade distribu
 | certifications | string[] | Sustainability certifications held |
 | summary | string | Brief description of sustainability practices |
 | website | string | Brand website URL |
-| rationale | string | Plain-language explanation of how the score was derived (per-dimension breakdown + disclaimer). Generated transparently from the four dimension scores, certifications, and summary. |
+| updated_at | string | When this rating was last reviewed |
+| sources | string[] | Citation URLs backing the rating (omitted when empty) |
+| rationale | string | Plain-language "why this score" explanation. **Only included on the single-brand endpoint** (`GET /brands/{slug}`); omitted from list/search responses to keep them small. |
 
 
 ## Deploying to VPS
+
+**Automated (recommended):** every push to `main` triggers `.github/workflows/deploy.yml`,
+which SSHes to the VPS, pulls, rebuilds, and restarts the service. It needs three
+repo secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`.
+
+**Manual:** run `./scripts/deploy.sh` from your machine (set `VPS=root@host` to
+override the default), or on the VPS directly:
+```bash
+cd /opt/rewoven-api && git fetch origin && git reset --hard origin/main \
+  && cargo build --release && systemctl restart rewoven-api
+```
+
+### First-time / from-scratch setup
 
 1. Build the release binary:
 ```bash

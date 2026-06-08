@@ -14,9 +14,7 @@ pub async fn get_categories(
     Ok(Json(categories))
 }
 
-pub async fn get_stats(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<OverallStats>, AppError> {
+pub async fn get_stats(State(state): State<Arc<AppState>>) -> Result<Json<OverallStats>, AppError> {
     let conn = state.db.get()?;
     let (total, avg_score, median, grade_dist, price_dist, country_count) =
         db::get_overall_stats(&conn)?;

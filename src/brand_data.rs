@@ -1,4 +1,4 @@
-use crate::models::{BrandRating, compute_grade};
+use crate::models::{compute_grade, BrandRating};
 
 fn brand(
     name: &str,
@@ -37,8 +37,10 @@ fn brand(
         certifications: certifications.iter().map(|s| s.to_string()).collect(),
         summary: summary.to_string(),
         website: website.to_string(),
-        // Generated fresh on read from the DB (see db::row_to_brand); the
-        // seed path doesn't persist it, so an empty value here is fine.
+        // updated_at is set by the DB default; sources/rationale are populated
+        // on read (see db::row_to_brand / handlers). Empty here is fine.
+        updated_at: String::new(),
+        sources: Vec::new(),
         rationale: String::new(),
     }
 }

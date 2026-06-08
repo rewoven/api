@@ -1,14 +1,15 @@
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Connection};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
-use crate::models::{BrandRating, CategoryStats, compute_grade, build_rationale};
+use crate::models::{compute_grade, BrandRating, CategoryStats};
 
 // ─── Init & Seed ───
 
 pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
-    conn.execute_batch("
+    conn.execute_batch(
+        "
         CREATE TABLE IF NOT EXISTS brands (
             slug TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -64,7 +65,8 @@ pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
             FOREIGN KEY (brand_slug) REFERENCES brands(slug)
         );
         CREATE INDEX IF NOT EXISTS idx_submissions_prefix ON barcode_submissions(prefix);
-    ")?;
+    ",
+    )?;
     Ok(())
 }
 
@@ -83,11 +85,22 @@ pub fn seed_db(conn: &Connection, brands: &[BrandRating]) -> Result<(), rusqlite
     )?;
 
     for b in brands {
-        let certs_json = serde_json::to_string(&b.certifications).unwrap_or_else(|_| "[]".to_string());
+        let certs_json =
+            serde_json::to_string(&b.certifications).unwrap_or_else(|_| "[]".to_string());
         stmt.execute(params![
-            b.slug, b.name, b.overall_score,
-            b.environmental_score, b.labor_score, b.transparency_score, b.animal_welfare_score,
-            b.price_range, b.country, b.category, certs_json, b.summary, b.website
+            b.slug,
+            b.name,
+            b.overall_score,
+            b.environmental_score,
+            b.labor_score,
+            b.transparency_score,
+            b.animal_welfare_score,
+            b.price_range,
+            b.country,
+            b.category,
+            certs_json,
+            b.summary,
+            b.website
         ])?;
     }
     tracing::info!("Seeded {} brands into database", brands.len());
@@ -100,48 +113,38 @@ fn row_to_brand(row: &rusqlite::Row) -> rusqlite::Result<BrandRating> {
     let overall_score: u8 = row.get("overall_score")?;
     let certs_str: String = row.get("certifications")?;
     let certifications: Vec<String> = serde_json::from_str(&certs_str).unwrap_or_default();
-    let name: String = row.get("name")?;
-    let environmental_score: u8 = row.get("environmental_score")?;
-    let labor_score: u8 = row.get("labor_score")?;
-    let transparency_score: u8 = row.get("transparency_score")?;
-    let animal_welfare_score: u8 = row.get("animal_welfare_score")?;
-    let category: String = row.get("category")?;
-    let summary: String = row.get("summary")?;
-    let rationale = build_rationale(
-        &name,
-        overall_score,
-        environmental_score,
-        labor_score,
-        transparency_score,
-        animal_welfare_score,
-        &category,
-        &certifications,
-        &summary,
-    );
     Ok(BrandRating {
         slug: row.get("slug")?,
-        name,
+        name: row.get("name")?,
         overall_score,
         grade: compute_grade(overall_score).to_string(),
-        environmental_score,
-        labor_score,
-        transparency_score,
-        animal_welfare_score,
+        environmental_score: row.get("environmental_score")?,
+        labor_score: row.get("labor_score")?,
+        transparency_score: row.get("transparency_score")?,
+        animal_welfare_score: row.get("animal_welfare_score")?,
         price_range: row.get("price_range")?,
         country: row.get("country")?,
-        category,
+        category: row.get("category")?,
         certifications,
-        summary,
+        summary: row.get("summary")?,
         website: row.get("website")?,
-        rationale,
+        // From the DB; defaults to "" if the column isn't selected.
+        updated_at: row.get("updated_at").unwrap_or_default(),
+        sources: Vec::new(),
+        // Rationale is heavy, so it is NOT generated here (keeps list responses
+        // small). The single-brand handler fills it in via build_rationale.
+        rationale: String::new(),
     })
 }
 
 // ─── Targeted queries ───
 
-pub fn get_brand_by_slug(conn: &Connection, slug: &str) -> Result<Option<BrandRating>, rusqlite::Error> {
+pub fn get_brand_by_slug(
+    conn: &Connection,
+    slug: &str,
+) -> Result<Option<BrandRating>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website FROM brands WHERE slug = ?1"
+        "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website, updated_at FROM brands WHERE slug = ?1"
     )?;
     let mut rows = stmt.query_map(params![slug], row_to_brand)?;
     match rows.next() {
@@ -201,12 +204,13 @@ pub fn list_brands(
 
     // Get total count
     let count_sql = format!("SELECT COUNT(*) FROM brands {}", where_sql);
-    let params_ref: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+        param_values.iter().map(|p| p.as_ref()).collect();
     let total: usize = conn.query_row(&count_sql, params_ref.as_slice(), |row| row.get(0))?;
 
     // Get paginated results
     let query_sql = format!(
-        "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website FROM brands {} {} LIMIT ? OFFSET ?",
+        "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website, updated_at FROM brands {} {} LIMIT ? OFFSET ?",
         where_sql, order_sql
     );
     let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -216,7 +220,8 @@ pub fn list_brands(
     }
 
     // Build params including limit and offset
-    let mut final_params: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|p| p.as_ref()).collect();
+    let mut final_params: Vec<&dyn rusqlite::types::ToSql> =
+        param_values.iter().map(|p| p.as_ref()).collect();
     let limit_val = limit as i64;
     let offset_val = offset as i64;
     final_params.push(&limit_val);
@@ -233,9 +238,10 @@ pub fn list_brands(
 
 pub fn top_brands(conn: &Connection, limit: usize) -> Result<Vec<BrandRating>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website FROM brands ORDER BY overall_score DESC LIMIT ?1"
+        "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website, updated_at FROM brands ORDER BY overall_score DESC LIMIT ?1"
     )?;
-    let brands = stmt.query_map(params![limit as i64], row_to_brand)?
+    let brands = stmt
+        .query_map(params![limit as i64], row_to_brand)?
         .filter_map(|r| r.ok())
         .collect();
     Ok(brands)
@@ -243,38 +249,53 @@ pub fn top_brands(conn: &Connection, limit: usize) -> Result<Vec<BrandRating>, r
 
 pub fn worst_brands(conn: &Connection, limit: usize) -> Result<Vec<BrandRating>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website FROM brands ORDER BY overall_score ASC LIMIT ?1"
+        "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website, updated_at FROM brands ORDER BY overall_score ASC LIMIT ?1"
     )?;
-    let brands = stmt.query_map(params![limit as i64], row_to_brand)?
+    let brands = stmt
+        .query_map(params![limit as i64], row_to_brand)?
         .filter_map(|r| r.ok())
         .collect();
     Ok(brands)
 }
 
-pub fn get_brands_by_slugs(conn: &Connection, slugs: &[String]) -> Result<Vec<BrandRating>, rusqlite::Error> {
+pub fn get_brands_by_slugs(
+    conn: &Connection,
+    slugs: &[String],
+) -> Result<Vec<BrandRating>, rusqlite::Error> {
     if slugs.is_empty() {
         return Ok(vec![]);
     }
     let placeholders: Vec<String> = (1..=slugs.len()).map(|i| format!("?{}", i)).collect();
     let sql = format!(
-        "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website FROM brands WHERE slug IN ({})",
+        "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website, updated_at FROM brands WHERE slug IN ({})",
         placeholders.join(", ")
     );
     let mut stmt = conn.prepare(&sql)?;
-    let params: Vec<&dyn rusqlite::types::ToSql> = slugs.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
-    let brands = stmt.query_map(params.as_slice(), row_to_brand)?
+    let params: Vec<&dyn rusqlite::types::ToSql> = slugs
+        .iter()
+        .map(|s| s as &dyn rusqlite::types::ToSql)
+        .collect();
+    let brands = stmt
+        .query_map(params.as_slice(), row_to_brand)?
         .filter_map(|r| r.ok())
         .collect();
     Ok(brands)
 }
 
-pub fn search_brands_sql(conn: &Connection, query: &str) -> Result<Vec<BrandRating>, rusqlite::Error> {
+pub fn search_brands_sql(
+    conn: &Connection,
+    query: &str,
+) -> Result<Vec<BrandRating>, rusqlite::Error> {
     let pattern = format!("%{}%", query.to_lowercase());
     let mut stmt = conn.prepare(
-        "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website FROM brands WHERE LOWER(name) LIKE ?1 ORDER BY CASE WHEN LOWER(name) = ?2 THEN 0 WHEN LOWER(name) LIKE ?3 THEN 1 ELSE 2 END, overall_score DESC"
+        "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website, updated_at FROM brands WHERE LOWER(name) LIKE ?1 ORDER BY CASE WHEN LOWER(name) = ?2 THEN 0 WHEN LOWER(name) LIKE ?3 THEN 1 ELSE 2 END, overall_score DESC"
     )?;
     let starts_with = format!("{}%", query.to_lowercase());
-    let brands = stmt.query_map(params![pattern, query.to_lowercase(), starts_with], row_to_brand)?
+    let brands = stmt
+        .query_map(
+            params![pattern, query.to_lowercase(), starts_with],
+            row_to_brand,
+        )?
         .filter_map(|r| r.ok())
         .collect();
     Ok(brands)
@@ -319,9 +340,11 @@ pub fn get_alternatives(
     }
     params_vec.push(Box::new(limit as i64));
 
-    let params_ref: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+    let params_ref: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn.prepare(&sql)?;
-    let brands = stmt.query_map(params_ref.as_slice(), row_to_brand)?
+    let brands = stmt
+        .query_map(params_ref.as_slice(), row_to_brand)?
         .filter_map(|r| r.ok())
         .collect();
     Ok(brands)
@@ -337,30 +360,47 @@ pub fn get_category_stats(conn: &Connection) -> Result<Vec<CategoryStats>, rusql
          ROUND(AVG(labor_score), 1) as avg_labor,
          ROUND(AVG(transparency_score), 1) as avg_trans,
          ROUND(AVG(animal_welfare_score), 1) as avg_animal
-         FROM brands GROUP BY category ORDER BY avg_score DESC"
+         FROM brands GROUP BY category ORDER BY avg_score DESC",
     )?;
-    let stats = stmt.query_map([], |row| {
-        Ok(CategoryStats {
-            category: row.get("category")?,
-            count: row.get::<_, usize>("cnt")?,
-            average_score: row.get("avg_score")?,
-            average_environmental: row.get("avg_env")?,
-            average_labor: row.get("avg_labor")?,
-            average_transparency: row.get("avg_trans")?,
-            average_animal_welfare: row.get("avg_animal")?,
-        })
-    })?.filter_map(|r| r.ok()).collect();
+    let stats = stmt
+        .query_map([], |row| {
+            Ok(CategoryStats {
+                category: row.get("category")?,
+                count: row.get::<_, usize>("cnt")?,
+                average_score: row.get("avg_score")?,
+                average_environmental: row.get("avg_env")?,
+                average_labor: row.get("avg_labor")?,
+                average_transparency: row.get("avg_trans")?,
+                average_animal_welfare: row.get("avg_animal")?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
     Ok(stats)
 }
 
-pub fn get_overall_stats(conn: &Connection) -> Result<(usize, f64, u8, HashMap<String, usize>, HashMap<String, usize>, usize), rusqlite::Error> {
+pub fn get_overall_stats(
+    conn: &Connection,
+) -> Result<
+    (
+        usize,
+        f64,
+        u8,
+        BTreeMap<String, usize>,
+        BTreeMap<String, usize>,
+        usize,
+    ),
+    rusqlite::Error,
+> {
     let total: usize = get_brand_count(conn)?;
     if total == 0 {
-        return Ok((0, 0.0, 0, HashMap::new(), HashMap::new(), 0));
+        return Ok((0, 0.0, 0, BTreeMap::new(), BTreeMap::new(), 0));
     }
 
     let avg_score: f64 = conn.query_row(
-        "SELECT ROUND(AVG(overall_score), 1) FROM brands", [], |row| row.get(0)
+        "SELECT ROUND(AVG(overall_score), 1) FROM brands",
+        [],
+        |row| row.get(0),
     )?;
 
     let median: u8 = conn.query_row(
@@ -370,7 +410,7 @@ pub fn get_overall_stats(conn: &Connection) -> Result<(usize, f64, u8, HashMap<S
     )?;
 
     // Grade distribution (computed from score ranges)
-    let mut grade_dist: HashMap<String, usize> = HashMap::new();
+    let mut grade_dist: BTreeMap<String, usize> = BTreeMap::new();
     let mut stmt = conn.prepare(
         "SELECT CASE
             WHEN overall_score >= 90 THEN 'A+'
@@ -383,7 +423,7 @@ pub fn get_overall_stats(conn: &Connection) -> Result<(usize, f64, u8, HashMap<S
             WHEN overall_score >= 20 THEN 'E'
             WHEN overall_score >= 10 THEN 'F'
             ELSE 'F-'
-         END as grade, COUNT(*) as cnt FROM brands GROUP BY grade"
+         END as grade, COUNT(*) as cnt FROM brands GROUP BY grade",
     )?;
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
@@ -393,7 +433,7 @@ pub fn get_overall_stats(conn: &Connection) -> Result<(usize, f64, u8, HashMap<S
     }
 
     // Price range distribution
-    let mut price_dist: HashMap<String, usize> = HashMap::new();
+    let mut price_dist: BTreeMap<String, usize> = BTreeMap::new();
     let mut stmt = conn.prepare("SELECT price_range, COUNT(*) FROM brands GROUP BY price_range")?;
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
@@ -402,11 +442,19 @@ pub fn get_overall_stats(conn: &Connection) -> Result<(usize, f64, u8, HashMap<S
         price_dist.insert(range, count);
     }
 
-    let country_count: usize = conn.query_row(
-        "SELECT COUNT(DISTINCT country) FROM brands", [], |row| row.get(0)
-    )?;
+    let country_count: usize =
+        conn.query_row("SELECT COUNT(DISTINCT country) FROM brands", [], |row| {
+            row.get(0)
+        })?;
 
-    Ok((total, avg_score, median, grade_dist, price_dist, country_count))
+    Ok((
+        total,
+        avg_score,
+        median,
+        grade_dist,
+        price_dist,
+        country_count,
+    ))
 }
 
 // ─── Upsert (no wasted SELECT) ───
@@ -478,8 +526,10 @@ pub fn find_brand_by_barcode(
 
 /// Returns total prefix count for /health-style reporting.
 pub fn get_barcode_prefix_count(conn: &Connection) -> Result<usize, rusqlite::Error> {
-    conn.query_row("SELECT COUNT(*) FROM barcode_prefixes", [], |r| r.get::<_, i64>(0))
-        .map(|n| n as usize)
+    conn.query_row("SELECT COUNT(*) FROM barcode_prefixes", [], |r| {
+        r.get::<_, i64>(0)
+    })
+    .map(|n| n as usize)
 }
 
 /// Bulk-insert prefix → brand mappings. Idempotent: existing prefixes
@@ -498,7 +548,11 @@ pub fn seed_barcode_prefixes(
             |r| r.get(0),
         )?;
         if brand_exists == 0 {
-            tracing::warn!("Skipping barcode prefix {} - brand '{}' not in DB", prefix, slug);
+            tracing::warn!(
+                "Skipping barcode prefix {} - brand '{}' not in DB",
+                prefix,
+                slug
+            );
             continue;
         }
 

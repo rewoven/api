@@ -49,9 +49,7 @@ pub async fn get_materials() -> Json<Vec<MaterialImpact>> {
     Json(get_materials_data().clone())
 }
 
-pub async fn get_material(
-    Path(slug): Path<String>,
-) -> Result<Json<MaterialImpact>, AppError> {
+pub async fn get_material(Path(slug): Path<String>) -> Result<Json<MaterialImpact>, AppError> {
     let slug_lower = slug.to_lowercase();
     match get_materials_data().iter().find(|m| m.slug == slug_lower) {
         Some(material) => Ok(Json(material.clone())),

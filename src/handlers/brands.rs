@@ -14,8 +14,12 @@ use crate::state::AppState;
 fn levenshtein(a: &str, b: &str) -> usize {
     let a_len = a.len();
     let b_len = b.len();
-    if a_len == 0 { return b_len; }
-    if b_len == 0 { return a_len; }
+    if a_len == 0 {
+        return b_len;
+    }
+    if b_len == 0 {
+        return a_len;
+    }
 
     let mut prev: Vec<usize> = (0..=b_len).collect();
     let mut curr = vec![0; b_len + 1];
@@ -24,9 +28,7 @@ fn levenshtein(a: &str, b: &str) -> usize {
         curr[0] = i + 1;
         for (j, cb) in b.chars().enumerate() {
             let cost = if ca == cb { 0 } else { 1 };
-            curr[j + 1] = (prev[j] + cost)
-                .min(prev[j + 1] + 1)
-                .min(curr[j] + 1);
+            curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
         }
         std::mem::swap(&mut prev, &mut curr);
     }
@@ -34,16 +36,16 @@ fn levenshtein(a: &str, b: &str) -> usize {
 }
 
 fn fuzzy_match(haystack: &str, needle: &str) -> bool {
-    if needle.len() < 3 { return false; }
+    if needle.len() < 3 {
+        return false;
+    }
     let max_dist = if needle.len() <= 4 { 1 } else { 2 };
     levenshtein(haystack, needle) <= max_dist
 }
 
 // ─── Handlers ───
 
-pub async fn health(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<HealthResponse>, AppError> {
+pub async fn health(State(state): State<Arc<AppState>>) -> Result<Json<HealthResponse>, AppError> {
     let conn = state.db.get()?;
     let count = db::get_brand_count(&conn)?;
     Ok(Json(HealthResponse {
@@ -73,8 +75,13 @@ pub async fn list_brands(
         offset,
     )?;
 
-    let pages = if total == 0 { 1 } else { (total + limit - 1) / limit };
-    Ok(Json(PaginatedResponse { brands, total, page, pages }))
+    let pages = if total == 0 { 1 } else { total.div_ceil(limit) };
+    Ok(Json(PaginatedResponse {
+        brands,
+        total,
+        page,
+        pages,
+    }))
 }
 
 pub async fn get_brand(
@@ -84,7 +91,22 @@ pub async fn get_brand(
     let conn = state.db.get()?;
     let slug_lower = slug.to_lowercase();
     match db::get_brand_by_slug(&conn, &slug_lower)? {
-        Some(brand) => Ok(Json(brand)),
+        Some(mut brand) => {
+            // Generate the full "why this score" rationale only for the
+            // single-brand endpoint (list responses stay lean).
+            brand.rationale = crate::models::build_rationale(
+                &brand.name,
+                brand.overall_score,
+                brand.environmental_score,
+                brand.labor_score,
+                brand.transparency_score,
+                brand.animal_welfare_score,
+                &brand.category,
+                &brand.certifications,
+                &brand.summary,
+            );
+            Ok(Json(brand))
+        }
         None => Err(AppError::NotFound(format!("Brand '{}' not found", slug))),
     }
 }
@@ -147,7 +169,10 @@ pub async fn compare_brands(
     Query(params): Query<CompareParams>,
 ) -> Result<Json<Vec<BrandRating>>, AppError> {
     let slugs = match params.brands {
-        Some(ref b) => b.split(',').map(|s| s.trim().to_lowercase()).collect::<Vec<_>>(),
+        Some(ref b) => b
+            .split(',')
+            .map(|s| s.trim().to_lowercase())
+            .collect::<Vec<_>>(),
         None => return Ok(Json(vec![])),
     };
     let conn = state.db.get()?;
@@ -169,7 +194,9 @@ pub async fn get_alternatives(
     };
 
     let limit = params.limit.unwrap_or(5).min(20);
-    let min_score = params.min_score.unwrap_or(brand.overall_score.saturating_add(10));
+    let min_score = params
+        .min_score
+        .unwrap_or(brand.overall_score.saturating_add(10));
 
     let price_tiers: Vec<&str> = match brand.price_range.as_str() {
         "$" => vec!["$", "$$"],
@@ -179,12 +206,23 @@ pub async fn get_alternatives(
         _ => vec!["$", "$$", "$$$", "$$$$"],
     };
 
-    let alts = db::get_alternatives(&conn, &slug_lower, &brand.category, min_score, &price_tiers, limit)?;
+    let alts = db::get_alternatives(
+        &conn,
+        &slug_lower,
+        &brand.category,
+        min_score,
+        &price_tiers,
+        limit,
+    )?;
 
     let reason = format!(
         "Showing sustainable alternatives to {} (score: {}/100, grade: {}). These brands score higher on sustainability while offering similar style and price range.",
         brand.name, brand.overall_score, brand.grade
     );
 
-    Ok(Json(AlternativesResponse { original: brand, alternatives: alts, reason }))
+    Ok(Json(AlternativesResponse {
+        original: brand,
+        alternatives: alts,
+        reason,
+    }))
 }

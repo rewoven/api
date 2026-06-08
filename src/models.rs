@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 // ─── Grade computation (derived, never persisted) ───
 
@@ -36,11 +36,18 @@ pub struct BrandRating {
     pub certifications: Vec<String>,
     pub summary: String,
     pub website: String,
-    /// Human-readable explanation of how the score was derived. Generated
-    /// from the four dimension scores, certifications, and summary so every
-    /// brand has a transparent, defensible "why this score" report. Framed
-    /// as editorial opinion based on publicly available information.
+    /// When this rating was last reviewed (from the DB).
     #[serde(default)]
+    pub updated_at: String,
+    /// Citation URLs backing this rating. Empty for now; the field exists so
+    /// per-brand sources can be added without an API-shape change. Omitted
+    /// from JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<String>,
+    /// Human-readable "why this score" explanation. To keep list responses
+    /// small this is ONLY populated on the single-brand endpoint
+    /// (GET /brands/{slug}); it is omitted from list/search/etc. responses.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub rationale: String,
 }
 
@@ -70,7 +77,9 @@ fn labor_note(score: u8) -> &'static str {
         65..=100 => "well-documented labor standards and supply-chain oversight",
         50..=64 => "some labor commitments with partial supply-chain oversight",
         30..=49 => "limited public disclosure of labor standards or supply-chain auditing",
-        _ => "little publicly available evidence of enforced labor standards or independent auditing",
+        _ => {
+            "little publicly available evidence of enforced labor standards or independent auditing"
+        }
     }
 }
 
@@ -226,10 +235,10 @@ pub struct OverallStats {
     pub total_brands: usize,
     pub average_score: f64,
     pub median_score: u8,
-    pub grade_distribution: HashMap<String, usize>,
+    pub grade_distribution: BTreeMap<String, usize>,
     pub category_count: usize,
     pub categories: Vec<CategoryStats>,
-    pub price_range_distribution: HashMap<String, usize>,
+    pub price_range_distribution: BTreeMap<String, usize>,
     pub country_count: usize,
 }
 
@@ -244,4 +253,72 @@ pub struct HealthResponse {
     pub status: String,
     pub version: String,
     pub total_brands: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grade_boundaries() {
+        assert_eq!(compute_grade(100), "A+");
+        assert_eq!(compute_grade(90), "A+");
+        assert_eq!(compute_grade(89), "A");
+        assert_eq!(compute_grade(35), "D-");
+        assert_eq!(compute_grade(0), "F-");
+    }
+
+    #[test]
+    fn rationale_is_grounded_and_disclaimed() {
+        let r = build_rationale(
+            "Acme",
+            35,
+            30,
+            30,
+            36,
+            44,
+            "Luxury",
+            &["B Corp".to_string()],
+            "Some summary.",
+        );
+        assert!(r.contains("Acme"));
+        assert!(r.contains("35/100"));
+        assert!(r.contains("Luxury"));
+        assert!(r.contains("B Corp"));
+        assert!(r.contains("opinion")); // disclaimer present
+        assert!(r.contains("arhan@rewovenapp.com"));
+    }
+
+    #[test]
+    fn rationale_handles_no_certifications() {
+        let r = build_rationale("X", 50, 50, 50, 50, 50, "Mid-Range", &[], "s");
+        assert!(r.contains("No third-party"));
+    }
+
+    #[test]
+    fn list_payload_omits_empty_rationale_and_sources() {
+        // A list/seed brand has empty rationale + sources → both omitted from JSON.
+        let b = BrandRating {
+            name: "X".into(),
+            slug: "x".into(),
+            overall_score: 50,
+            grade: "C-".into(),
+            environmental_score: 50,
+            labor_score: 50,
+            transparency_score: 50,
+            animal_welfare_score: 50,
+            price_range: "$$".into(),
+            country: "US".into(),
+            category: "Mid-Range".into(),
+            certifications: vec![],
+            summary: "s".into(),
+            website: "w".into(),
+            updated_at: String::new(),
+            sources: vec![],
+            rationale: String::new(),
+        };
+        let json = serde_json::to_string(&b).unwrap();
+        assert!(!json.contains("rationale"));
+        assert!(!json.contains("sources"));
+    }
 }

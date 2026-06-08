@@ -92,7 +92,11 @@ pub async fn contribute_barcode(
     Json(body): Json<ContributeRequest>,
 ) -> Result<Json<ContributeResponse>, AppError> {
     let conn = state.db.get()?;
-    let cleaned: String = body.barcode.chars().filter(|c| c.is_ascii_digit()).collect();
+    let cleaned: String = body
+        .barcode
+        .chars()
+        .filter(|c| c.is_ascii_digit())
+        .collect();
 
     // Use the 8-digit prefix by default - sweet spot for company specificity
     if cleaned.len() < 8 {
