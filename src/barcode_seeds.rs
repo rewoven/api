@@ -90,7 +90,7 @@ pub const SEED_PREFIXES: &[(&str, &str, &str)] = &[
     ("88567350", "g-star-raw",    "G-Star Raw"),
     ("88567360", "ag-jeans",      "AG Adriano Goldschmied"),
 
-    // ── Sustainable / eco-focused (lean into this — Rewoven's audience) ──
+    // ── Sustainable / eco-focused (lean into this - Rewoven's audience) ──
     ("88568010", "patagonia",     "Patagonia Inc."),
     ("88568020", "tentree",       "tentree"),
     ("88568030", "veja",          "VEJA"),

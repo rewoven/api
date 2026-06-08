@@ -108,7 +108,7 @@ Overall statistics including total brands, average/median scores, grade distribu
 ## Methodology & Disclaimer
 
 `overall_score` is the equal-weighted average of the four dimension scores
-(environmental, labor, transparency, animal welfare), each 0–100, assigned
+(environmental, labor, transparency, animal welfare), each 0-100, assigned
 from publicly available information. Every brand response includes a
 `rationale` field explaining the score.
 

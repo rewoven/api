@@ -32,7 +32,7 @@ async fn main() {
         let count = db::get_brand_count(&conn).unwrap_or(0);
         tracing::info!("Database has {} brands", count);
 
-        // Seed barcode prefixes (idempotent — only inserts new ones)
+        // Seed barcode prefixes (idempotent - only inserts new ones)
         match db::seed_barcode_prefixes(&conn, barcode_seeds::SEED_PREFIXES) {
             Ok(inserted) => {
                 let total = db::get_barcode_prefix_count(&conn).unwrap_or(0);

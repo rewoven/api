@@ -39,7 +39,7 @@ pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         --            'crowdsourced'   submitted by an app user
         --            'partner'        added via partner integration
         --
-        -- confidence: 0-100 — we only return matches with confidence >= 50
+        -- confidence: 0-100 - we only return matches with confidence >= 50
         --             so a single crowdsourced report can't pollute the data.
         CREATE TABLE IF NOT EXISTS barcode_prefixes (
             prefix TEXT PRIMARY KEY,
@@ -491,14 +491,14 @@ pub fn seed_barcode_prefixes(
 ) -> Result<usize, rusqlite::Error> {
     let mut inserted = 0;
     for (prefix, slug, notes) in prefixes {
-        // Skip if the brand isn't in our brands table — keeps FK clean
+        // Skip if the brand isn't in our brands table - keeps FK clean
         let brand_exists: i64 = conn.query_row(
             "SELECT COUNT(*) FROM brands WHERE slug = ?1",
             params![slug],
             |r| r.get(0),
         )?;
         if brand_exists == 0 {
-            tracing::warn!("Skipping barcode prefix {} — brand '{}' not in DB", prefix, slug);
+            tracing::warn!("Skipping barcode prefix {} - brand '{}' not in DB", prefix, slug);
             continue;
         }
 

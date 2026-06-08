@@ -94,7 +94,7 @@ fn animal_note(score: u8) -> &'static str {
 
 /// Build the transparent per-brand rationale. Every statement is either
 /// derived from our own dimension scores or a verifiable fact (certs),
-/// and the whole thing is explicitly framed as opinion — this is what
+/// and the whole thing is explicitly framed as opinion - this is what
 /// keeps the ratings defensible.
 pub fn build_rationale(
     name: &str,
@@ -118,7 +118,7 @@ pub fn build_rationale(
     };
 
     format!(
-        "Rewoven rates {name} {overall}/100 (grade {grade}) — {band} overall for sustainability. \
+        "Rewoven rates {name} {overall}/100 (grade {grade}) - {band} overall for sustainability. \
 This composite is the equal-weighted average of four dimensions:\n\n\
 • Environmental ({environmental}/100): {env}.\n\
 • Labor practices ({labor}/100): {lab}.\n\

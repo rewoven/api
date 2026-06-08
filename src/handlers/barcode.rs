@@ -94,7 +94,7 @@ pub async fn contribute_barcode(
     let conn = state.db.get()?;
     let cleaned: String = body.barcode.chars().filter(|c| c.is_ascii_digit()).collect();
 
-    // Use the 8-digit prefix by default — sweet spot for company specificity
+    // Use the 8-digit prefix by default - sweet spot for company specificity
     if cleaned.len() < 8 {
         return Ok(Json(ContributeResponse {
             ok: false,
@@ -111,6 +111,6 @@ pub async fn contribute_barcode(
 
     Ok(Json(ContributeResponse {
         ok: true,
-        message: "Thanks — we'll use this to improve our barcode database.".into(),
+        message: "Thanks - we'll use this to improve our barcode database.".into(),
     }))
 }
