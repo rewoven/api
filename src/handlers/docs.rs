@@ -1,13 +1,9 @@
-//! Self-served API documentation: an OpenAPI 3.0 spec + a Swagger UI page.
-
 use axum::{http::header, response::Html, response::IntoResponse};
 
-/// GET /openapi.json — machine-readable OpenAPI 3.0 spec.
 pub async fn openapi_json() -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "application/json")], OPENAPI_SPEC)
 }
 
-/// GET /docs — interactive Swagger UI (loads the spec above).
 pub async fn swagger_ui() -> Html<&'static str> {
     Html(SWAGGER_HTML)
 }

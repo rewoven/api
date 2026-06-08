@@ -9,8 +9,6 @@ use crate::error::AppError;
 use crate::models::*;
 use crate::state::AppState;
 
-// ─── Levenshtein distance for fuzzy search ───
-
 fn levenshtein(a: &str, b: &str) -> usize {
     let a_len = a.len();
     let b_len = b.len();
@@ -42,8 +40,6 @@ fn fuzzy_match(haystack: &str, needle: &str) -> bool {
     let max_dist = if needle.len() <= 4 { 1 } else { 2 };
     levenshtein(haystack, needle) <= max_dist
 }
-
-// ─── Handlers ───
 
 pub async fn health(State(state): State<Arc<AppState>>) -> Result<Json<HealthResponse>, AppError> {
     let conn = state.db.get()?;
@@ -92,8 +88,6 @@ pub async fn get_brand(
     let slug_lower = slug.to_lowercase();
     match db::get_brand_by_slug(&conn, &slug_lower)? {
         Some(mut brand) => {
-            // Generate the full "why this score" rationale only for the
-            // single-brand endpoint (list responses stay lean).
             brand.rationale = crate::models::build_rationale(
                 &brand.name,
                 brand.overall_score,
@@ -122,10 +116,8 @@ pub async fn search_brands(
 
     let conn = state.db.get()?;
 
-    // SQL search for exact/contains matches
     let mut results = db::search_brands_sql(&conn, &query)?;
 
-    // Levenshtein fuzzy fallback: if SQL found nothing, scan for close matches
     if results.is_empty() {
         let query_lower = query.to_lowercase();
         let (all, _) = db::list_brands(&conn, None, None, None, None, None, 1000, 0)?;

@@ -1,24 +1,4 @@
-//! Seed data: top fashion-brand GS1 company prefixes.
-//!
-//! Each tuple is (8-digit-prefix, brand-slug, notes).
-//!
-//! Brands map to entries in our `brands` table. If the slug doesn't
-//! exist, the seeder skips with a warning rather than fail.
-//!
-//! Sources:
-//! - GS1 GEPIR public lookup (gepir.gs1.org)
-//! - Public corporate filings + product UPC samples
-//! - User-contributed during testing
-//!
-//! Some companies have MULTIPLE prefixes (different product lines,
-//! regional subsidiaries, acquisitions). We list each separately. If
-//! you find a barcode in the wild that we miss, the /contribute
-//! endpoint will eventually fold it in.
-//!
-//! Confidence is set to 100 (manual) for everything here.
-
 pub const SEED_PREFIXES: &[(&str, &str, &str)] = &[
-    // ── Fast fashion (the most-scanned brands by far) ──
     ("88571017", "shein", "China Shein Group main UPC block"),
     ("88571011", "shein", "Shein secondary block"),
     ("84091540", "zara", "Inditex / Zara main"),
@@ -40,7 +20,6 @@ pub const SEED_PREFIXES: &[(&str, &str, &str)] = &[
     ("19354870", "boohoo", "Boohoo Group UK"),
     ("19354880", "prettylittlething", "Boohoo subsidiary"),
     ("88981020", "forever-21", "Forever 21 LA"),
-    // ── Sportswear & athleisure ──
     ("19357210", "nike", "Nike Inc."),
     ("19357211", "nike", "Nike secondary"),
     ("88556750", "nike", "Nike Asia regional"),
@@ -55,7 +34,6 @@ pub const SEED_PREFIXES: &[(&str, &str, &str)] = &[
     ("40464800", "fila", "Fila"),
     ("88566280", "champion", "Champion / HanesBrands"),
     ("88566290", "vans", "Vans / VF Corp"),
-    // ── Mid-market / contemporary ──
     ("88566100", "gap", "Gap Inc."),
     ("88566110", "old-navy", "Old Navy / Gap Inc."),
     ("88566120", "banana-republic", "Banana Republic / Gap Inc."),
@@ -68,7 +46,6 @@ pub const SEED_PREFIXES: &[(&str, &str, &str)] = &[
     ("88567080", "urban-outfitters", "Urban Outfitters Inc."),
     ("88567090", "anthropologie", "Anthropologie / URBN"),
     ("88567100", "free-people", "Free People / URBN"),
-    // ── Premium / contemporary ──
     ("88567200", "everlane", "Everlane Inc."),
     ("88567210", "reformation", "The Reformation"),
     ("88567220", "cos", "COS / H&M Group"),
@@ -77,7 +54,6 @@ pub const SEED_PREFIXES: &[(&str, &str, &str)] = &[
     ("19360400", "weekday", "Weekday / H&M"),
     ("88567260", "ganni", "Ganni Denmark"),
     ("88567270", "acne-studios", "Acne Studios"),
-    // ── Premium denim ──
     ("88567300", "levis", "Levi Strauss & Co."),
     ("88567310", "levis", "Levi's Asia regional"),
     ("88567320", "wrangler", "Wrangler / Kontoor Brands"),
@@ -85,7 +61,6 @@ pub const SEED_PREFIXES: &[(&str, &str, &str)] = &[
     ("88567340", "diesel", "Diesel S.p.A."),
     ("88567350", "g-star-raw", "G-Star Raw"),
     ("88567360", "ag-jeans", "AG Adriano Goldschmied"),
-    // ── Sustainable / eco-focused (lean into this - Rewoven's audience) ──
     ("88568010", "patagonia", "Patagonia Inc."),
     ("88568020", "tentree", "tentree"),
     ("88568030", "veja", "VEJA"),
@@ -98,7 +73,6 @@ pub const SEED_PREFIXES: &[(&str, &str, &str)] = &[
     ("88568100", "kotn", "Kotn"),
     ("88568110", "icebreaker", "Icebreaker NZ"),
     ("88568120", "knickey", "Knickey"),
-    // ── Luxury / designer (less common at booths but worth covering) ──
     ("30453650", "gucci", "Gucci / Kering"),
     ("30453660", "balenciaga", "Balenciaga / Kering"),
     ("30453670", "ysl", "Yves Saint Laurent / Kering"),
@@ -127,7 +101,6 @@ pub const SEED_PREFIXES: &[(&str, &str, &str)] = &[
     ("88569210", "kate-spade", "Kate Spade / Tapestry"),
     ("88569220", "coach", "Coach / Tapestry"),
     ("88569230", "stuart-weitzman", "Stuart Weitzman / Tapestry"),
-    // ── Footwear-specific ──
     ("88566400", "converse", "Converse / Nike"),
     ("88566410", "doc-martens", "Dr. Martens"),
     ("88566420", "timberland", "Timberland / VF Corp"),
@@ -135,7 +108,6 @@ pub const SEED_PREFIXES: &[(&str, &str, &str)] = &[
     ("88566440", "birkenstock", "Birkenstock"),
     ("88566450", "crocs", "Crocs Inc."),
     ("88566460", "skechers", "Skechers USA"),
-    // ── Streetwear ──
     ("88567400", "supreme", "Supreme NYC"),
     ("88567410", "stussy", "Stussy Inc."),
     ("88567420", "carhartt", "Carhartt WIP"),
@@ -146,7 +118,6 @@ pub const SEED_PREFIXES: &[(&str, &str, &str)] = &[
     ("88567470", "kith", "Kith NYC"),
 ];
 
-/// Total seed count, used for startup logging.
 pub fn count() -> usize {
     SEED_PREFIXES.len()
 }

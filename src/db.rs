@@ -5,8 +5,6 @@ use std::collections::BTreeMap;
 
 use crate::models::{compute_grade, BrandRating, CategoryStats};
 
-// ─── Init & Seed ───
-
 pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
     conn.execute_batch(
         "
@@ -107,8 +105,6 @@ pub fn seed_db(conn: &Connection, brands: &[BrandRating]) -> Result<(), rusqlite
     Ok(())
 }
 
-// ─── Row mapper ───
-
 fn row_to_brand(row: &rusqlite::Row) -> rusqlite::Result<BrandRating> {
     let overall_score: u8 = row.get("overall_score")?;
     let certs_str: String = row.get("certifications")?;
@@ -128,16 +124,13 @@ fn row_to_brand(row: &rusqlite::Row) -> rusqlite::Result<BrandRating> {
         certifications,
         summary: row.get("summary")?,
         website: row.get("website")?,
-        // From the DB; defaults to "" if the column isn't selected.
+
         updated_at: row.get("updated_at").unwrap_or_default(),
         sources: Vec::new(),
-        // Rationale is heavy, so it is NOT generated here (keeps list responses
-        // small). The single-brand handler fills it in via build_rationale.
+
         rationale: String::new(),
     })
 }
-
-// ─── Targeted queries ───
 
 pub fn get_brand_by_slug(
     conn: &Connection,
@@ -202,24 +195,20 @@ pub fn list_brands(
         _ => "",
     };
 
-    // Get total count
     let count_sql = format!("SELECT COUNT(*) FROM brands {}", where_sql);
     let params_ref: Vec<&dyn rusqlite::types::ToSql> =
         param_values.iter().map(|p| p.as_ref()).collect();
     let total: usize = conn.query_row(&count_sql, params_ref.as_slice(), |row| row.get(0))?;
 
-    // Get paginated results
     let query_sql = format!(
         "SELECT slug, name, overall_score, environmental_score, labor_score, transparency_score, animal_welfare_score, price_range, country, category, certifications, summary, website, updated_at FROM brands {} {} LIMIT ? OFFSET ?",
         where_sql, order_sql
     );
     let mut all_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
     for p in &param_values {
-        // Re-create params for the second query
         all_params.push(Box::new(p.as_ref().to_sql().unwrap()));
     }
 
-    // Build params including limit and offset
     let mut final_params: Vec<&dyn rusqlite::types::ToSql> =
         param_values.iter().map(|p| p.as_ref()).collect();
     let limit_val = limit as i64;
@@ -350,8 +339,6 @@ pub fn get_alternatives(
     Ok(brands)
 }
 
-// ─── Stats (aggregated in SQL) ───
-
 pub fn get_category_stats(conn: &Connection) -> Result<Vec<CategoryStats>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT category, COUNT(*) as cnt,
@@ -409,7 +396,6 @@ pub fn get_overall_stats(
         |row| row.get(0),
     )?;
 
-    // Grade distribution (computed from score ranges)
     let mut grade_dist: BTreeMap<String, usize> = BTreeMap::new();
     let mut stmt = conn.prepare(
         "SELECT CASE
@@ -432,7 +418,6 @@ pub fn get_overall_stats(
         grade_dist.insert(grade, count);
     }
 
-    // Price range distribution
     let mut price_dist: BTreeMap<String, usize> = BTreeMap::new();
     let mut stmt = conn.prepare("SELECT price_range, COUNT(*) FROM brands GROUP BY price_range")?;
     let mut rows = stmt.query([])?;
@@ -456,8 +441,6 @@ pub fn get_overall_stats(
         country_count,
     ))
 }
-
-// ─── Upsert (no wasted SELECT) ───
 
 #[allow(dead_code)]
 pub fn upsert_brand(conn: &Connection, b: &BrandRating) -> Result<(), rusqlite::Error> {
@@ -486,12 +469,6 @@ pub fn create_pool(path: &str) -> Result<Pool<SqliteConnectionManager>, r2d2::Er
     Pool::builder().max_size(8).build(manager)
 }
 
-// ─── Barcode prefix lookup ──────────────────────────────────────────
-
-/// Try matching a barcode against our prefix table. We strip non-digit
-/// characters (some scanners emit hyphens), then walk longest-to-shortest
-/// prefixes (9 → 6 digits) and return the first match with confidence
-/// >= 50. Returns the brand slug.
 pub fn find_brand_by_barcode(
     conn: &Connection,
     raw_barcode: &str,
@@ -501,7 +478,6 @@ pub fn find_brand_by_barcode(
         return Ok(None);
     }
 
-    // Try longest GS1 prefixes first (most specific wins)
     for len in [9, 8, 7, 6].iter() {
         if digits.len() < *len {
             continue;
@@ -524,7 +500,6 @@ pub fn find_brand_by_barcode(
     Ok(None)
 }
 
-/// Returns total prefix count for /health-style reporting.
 pub fn get_barcode_prefix_count(conn: &Connection) -> Result<usize, rusqlite::Error> {
     conn.query_row("SELECT COUNT(*) FROM barcode_prefixes", [], |r| {
         r.get::<_, i64>(0)
@@ -532,16 +507,12 @@ pub fn get_barcode_prefix_count(conn: &Connection) -> Result<usize, rusqlite::Er
     .map(|n| n as usize)
 }
 
-/// Bulk-insert prefix → brand mappings. Idempotent: existing prefixes
-/// are left untouched (so re-seeding doesn't downgrade crowdsourced
-/// data that's been promoted to the main table).
 pub fn seed_barcode_prefixes(
     conn: &Connection,
-    prefixes: &[(&str, &str, &str)], // (prefix, brand_slug, notes)
+    prefixes: &[(&str, &str, &str)],
 ) -> Result<usize, rusqlite::Error> {
     let mut inserted = 0;
     for (prefix, slug, notes) in prefixes {
-        // Skip if the brand isn't in our brands table - keeps FK clean
         let brand_exists: i64 = conn.query_row(
             "SELECT COUNT(*) FROM brands WHERE slug = ?1",
             params![slug],
@@ -566,15 +537,12 @@ pub fn seed_barcode_prefixes(
     Ok(inserted)
 }
 
-/// Record a crowdsourced submission. After 3 matching submissions for
-/// the same (prefix, brand), promote to the main table at confidence 70.
 pub fn submit_crowdsourced_prefix(
     conn: &Connection,
     prefix: &str,
     brand_slug: &str,
     user_hash: Option<&str>,
 ) -> Result<(), rusqlite::Error> {
-    // Verify brand exists before recording
     let exists: i64 = conn.query_row(
         "SELECT COUNT(*) FROM brands WHERE slug = ?1",
         params![brand_slug],
@@ -592,8 +560,6 @@ pub fn submit_crowdsourced_prefix(
         params![prefix, brand_slug, user_hash],
     )?;
 
-    // If 3+ users have agreed AND this prefix isn't already in the main
-    // table at high confidence, promote it.
     let agreement_count: i64 = conn.query_row(
         "SELECT COUNT(DISTINCT COALESCE(user_hash, id)) FROM barcode_submissions
          WHERE prefix = ?1 AND brand_slug = ?2",

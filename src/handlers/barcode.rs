@@ -11,22 +11,17 @@ use crate::{db, models::BrandRating};
 
 #[derive(Serialize)]
 pub struct BarcodeLookupResponse {
-    /// Cleaned (digits only) version of the input
     pub barcode: String,
-    /// "ours" if served from our DB, "miss" if no match
+
     pub source: String,
-    /// Provenance of the prefix mapping: 'manual' / 'gs1' / 'crowdsourced' / 'partner'
+
     pub prefix_source: Option<String>,
-    /// 0-100 confidence in the match
+
     pub confidence: Option<i64>,
-    /// Full brand record from our database, when matched
+
     pub brand: Option<BrandRating>,
 }
 
-/// GET /api/barcode/{upc}
-///
-/// Look up a brand by UPC/EAN barcode. Returns the matching brand if
-/// the first 6-9 digits hit a registered prefix in our database.
 pub async fn lookup_barcode(
     State(state): State<Arc<AppState>>,
     Path(upc): Path<String>,
@@ -67,11 +62,10 @@ pub async fn lookup_barcode(
 
 #[derive(Deserialize)]
 pub struct ContributeRequest {
-    /// Full barcode the user scanned. We extract the prefix server-side.
     pub barcode: String,
-    /// Slug of the brand the user manually identified after the lookup miss.
+
     pub brand_slug: String,
-    /// Optional anonymous identifier for de-duping submissions per user.
+
     pub user_hash: Option<String>,
 }
 
@@ -81,12 +75,6 @@ pub struct ContributeResponse {
     pub message: String,
 }
 
-/// POST /api/barcode/contribute
-///
-/// Crowdsourcing endpoint: when a user manually identifies a brand
-/// after a lookup miss, the app POSTs the (barcode, brand) pair here.
-/// Three independent confirmations promote a prefix into the main
-/// `barcode_prefixes` table at confidence 70.
 pub async fn contribute_barcode(
     State(state): State<Arc<AppState>>,
     Json(body): Json<ContributeRequest>,
@@ -98,7 +86,6 @@ pub async fn contribute_barcode(
         .filter(|c| c.is_ascii_digit())
         .collect();
 
-    // Use the 8-digit prefix by default - sweet spot for company specificity
     if cleaned.len() < 8 {
         return Ok(Json(ContributeResponse {
             ok: false,

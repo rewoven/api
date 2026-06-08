@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-// ─── Grade computation (derived, never persisted) ───
-
 pub fn compute_grade(score: u8) -> &'static str {
     match score {
         90..=100 => "A+",
@@ -17,8 +15,6 @@ pub fn compute_grade(score: u8) -> &'static str {
         _ => "F-",
     }
 }
-
-// ─── Core types ───
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrandRating {
@@ -36,22 +32,16 @@ pub struct BrandRating {
     pub certifications: Vec<String>,
     pub summary: String,
     pub website: String,
-    /// When this rating was last reviewed (from the DB).
+
     #[serde(default)]
     pub updated_at: String,
-    /// Citation URLs backing this rating. Empty for now; the field exists so
-    /// per-brand sources can be added without an API-shape change. Omitted
-    /// from JSON when empty.
+
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<String>,
-    /// Human-readable "why this score" explanation. To keep list responses
-    /// small this is ONLY populated on the single-brand endpoint
-    /// (GET /brands/{slug}); it is omitted from list/search/etc. responses.
+
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub rationale: String,
 }
-
-// ─── Rationale / "why this score" report (derived, never persisted) ───
 
 fn overall_band(score: u8) -> &'static str {
     match score {
@@ -101,10 +91,6 @@ fn animal_note(score: u8) -> &'static str {
     }
 }
 
-/// Build the transparent per-brand rationale. Every statement is either
-/// derived from our own dimension scores or a verifiable fact (certs),
-/// and the whole thing is explicitly framed as opinion - this is what
-/// keeps the ratings defensible.
 pub fn build_rationale(
     name: &str,
     overall: u8,
@@ -168,8 +154,6 @@ pub struct MaterialImpact {
     pub description: String,
 }
 
-// ─── Query parameter types ───
-
 #[derive(Deserialize)]
 pub struct ListParams {
     pub page: Option<usize>,
@@ -201,8 +185,6 @@ pub struct AlternativesParams {
     pub limit: Option<usize>,
     pub min_score: Option<u8>,
 }
-
-// ─── Response types ───
 
 #[derive(Serialize)]
 pub struct AlternativesResponse {
@@ -285,7 +267,7 @@ mod tests {
         assert!(r.contains("35/100"));
         assert!(r.contains("Luxury"));
         assert!(r.contains("B Corp"));
-        assert!(r.contains("opinion")); // disclaimer present
+        assert!(r.contains("opinion"));
         assert!(r.contains("arhan@rewovenapp.com"));
     }
 
@@ -297,7 +279,6 @@ mod tests {
 
     #[test]
     fn list_payload_omits_empty_rationale_and_sources() {
-        // A list/seed brand has empty rationale + sources → both omitted from JSON.
         let b = BrandRating {
             name: "X".into(),
             slug: "x".into(),

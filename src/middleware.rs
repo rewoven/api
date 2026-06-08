@@ -1,5 +1,3 @@
-//! HTTP middleware: per-IP rate limiting + response caching (Cache-Control + ETag).
-
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -12,17 +10,13 @@ use axum::{
 };
 use governor::{clock::DefaultClock, state::keyed::DefaultKeyedStateStore, Quota, RateLimiter};
 
-/// Per-key (per-IP) rate limiter.
 pub type KeyedLimiter = RateLimiter<String, DefaultKeyedStateStore<String>, DefaultClock>;
 
-/// Build a limiter allowing `per_minute` requests per IP (with burst = per_minute).
 pub fn new_limiter(per_minute: u32) -> Arc<KeyedLimiter> {
     let quota = Quota::per_minute(NonZeroU32::new(per_minute.max(1)).unwrap());
     Arc::new(RateLimiter::keyed(quota))
 }
 
-/// Extract the real client IP. The API sits behind nginx/Cloudflare, so the
-/// socket peer is the proxy — we trust the standard forwarded headers instead.
 fn client_key(req: &Request<Body>) -> String {
     let h = req.headers();
     if let Some(v) = h.get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
@@ -36,7 +30,6 @@ fn client_key(req: &Request<Body>) -> String {
     "unknown".to_string()
 }
 
-/// Reject requests from an IP that has exceeded its quota with 429.
 pub async fn rate_limit(
     State(limiter): State<Arc<KeyedLimiter>>,
     req: Request<Body>,
@@ -59,9 +52,6 @@ pub async fn rate_limit(
     next.run(req).await
 }
 
-/// Add `Cache-Control` + a content-hash `ETag` to GET responses, and short-circuit
-/// to `304 Not Modified` when the client's `If-None-Match` already matches.
-/// The brand/material data is static between deploys, so this saves real bandwidth.
 pub async fn cache_and_etag(req: Request<Body>, next: Next) -> Response {
     let is_get = req.method() == axum::http::Method::GET;
     let inm = req
@@ -72,7 +62,6 @@ pub async fn cache_and_etag(req: Request<Body>, next: Next) -> Response {
 
     let resp = next.run(req).await;
 
-    // Only cache successful GETs.
     if !is_get || resp.status() != StatusCode::OK {
         return resp;
     }
@@ -83,7 +72,6 @@ pub async fn cache_and_etag(req: Request<Body>, next: Next) -> Response {
         Err(_) => return Response::from_parts(parts, Body::empty()),
     };
 
-    // Content hash → weak ETag.
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     bytes.as_ref().hash(&mut hasher);
@@ -97,7 +85,6 @@ pub async fn cache_and_etag(req: Request<Body>, next: Next) -> Response {
         parts.headers.insert(header::ETAG, v);
     }
 
-    // Client already has this exact body → 304, no payload.
     if inm.as_deref() == Some(etag_value.as_str()) {
         parts.status = StatusCode::NOT_MODIFIED;
         return Response::from_parts(parts, Body::empty());

@@ -37,8 +37,7 @@ fn brand(
         certifications: certifications.iter().map(|s| s.to_string()).collect(),
         summary: summary.to_string(),
         website: website.to_string(),
-        // updated_at is set by the DB default; sources/rationale are populated
-        // on read (see db::row_to_brand / handlers). Empty here is fine.
+
         updated_at: String::new(),
         sources: Vec::new(),
         rationale: String::new(),
@@ -47,7 +46,7 @@ fn brand(
 
 pub fn load_brands() -> Vec<BrandRating> {
     vec![
-        // ==================== FAST FASHION ====================
+
         brand("Zara", 28, 30, 25, 35, 22, "$$", "Spain", "Fast Fashion",
             &[], "Owns some eco-conscious lines but remains a high-volume fast fashion producer with limited supply chain transparency.", "https://www.zara.com"),
         brand("H&M", 35, 40, 30, 42, 28, "$$", "Sweden", "Fast Fashion",
@@ -125,7 +124,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Esprit", 30, 32, 28, 34, 26, "$$", "Germany", "Fast Fashion",
             &[], "Has made sustainability commitments but scale and execution remain challenges.", "https://www.esprit.com"),
 
-        // ==================== LUXURY ====================
         brand("Gucci", 42, 45, 38, 48, 37, "$$$$", "Italy", "Luxury",
             &[], "Part of Kering group with notable sustainability commitments including carbon neutrality goals.", "https://www.gucci.com"),
         brand("Prada", 35, 38, 30, 40, 32, "$$$$", "Italy", "Luxury",
@@ -203,7 +201,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Acne Studios", 40, 42, 36, 46, 36, "$$$", "Sweden", "Luxury",
             &[], "Scandinavian luxury with some sustainability goals and material innovation.", "https://www.acnestudios.com"),
 
-        // ==================== SUSTAINABLE ====================
         brand("Patagonia", 92, 95, 90, 95, 88, "$$$", "United States", "Sustainable",
             &["B Corp", "Fair Trade", "Bluesign", "GOTS"], "Industry leader in sustainability. Donates 1% of sales to environmental causes and pioneered supply chain transparency.", "https://www.patagonia.com"),
         brand("Eileen Fisher", 82, 85, 80, 88, 75, "$$$", "United States", "Sustainable",
@@ -289,7 +286,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Colorful Standard", 72, 76, 68, 76, 68, "$$", "Denmark", "Sustainable",
             &["GOTS", "OEKO-TEX"], "Organic basics in a wide range of colors with certified production.", "https://www.colorfulstandard.com"),
 
-        // ==================== SPORTSWEAR ====================
         brand("Nike", 38, 40, 34, 44, 34, "$$$", "United States", "Sportswear",
             &["Bluesign"], "Large sustainability commitments including Move to Zero initiative but supply chain concerns remain.", "https://www.nike.com"),
         brand("Adidas", 45, 48, 40, 52, 40, "$$$", "Germany", "Sportswear",
@@ -347,7 +343,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Merrell", 34, 36, 30, 38, 32, "$$", "United States", "Sportswear",
             &[], "Wolverine subsidiary with some eco-friendly product lines.", "https://www.merrell.com"),
 
-        // ==================== MID-RANGE ====================
         brand("Uniqlo", 38, 40, 34, 44, 34, "$$", "Japan", "Mid-Range",
             &[], "Fast Retailing subsidiary with sustainability targets but labor concerns in supply chain.", "https://www.uniqlo.com"),
         brand("Gap", 35, 38, 30, 40, 32, "$$", "United States", "Mid-Range",
@@ -467,7 +462,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Monki", 36, 40, 32, 40, 32, "$", "Sweden", "Mid-Range",
             &[], "H&M subsidiary with some sustainable collections.", "https://www.monki.com"),
 
-        // ==================== OUTDOOR/ACTIVE ====================
         brand("The North Face", 42, 44, 38, 48, 38, "$$$", "United States", "Outdoor/Active",
             &["Bluesign"], "VF Corp subsidiary with sustainability targets and recycled materials use.", "https://www.thenorthface.com"),
         brand("Columbia", 38, 40, 34, 42, 36, "$$$", "United States", "Outdoor/Active",
@@ -527,7 +521,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Montane", 40, 42, 36, 44, 38, "$$$", "United Kingdom", "Outdoor/Active",
             &["Bluesign"], "UK outdoor brand with sustainability targets and recycled material use.", "https://www.montane.com"),
 
-        // ==================== THRIFT/RESALE ====================
         brand("ThredUp", 82, 90, 74, 85, 79, "$$", "United States", "Thrift/Resale",
             &[], "Largest online resale platform extending clothing life and reducing waste.", "https://www.thredup.com"),
         brand("Poshmark", 78, 85, 72, 80, 75, "$$", "United States", "Thrift/Resale",
@@ -571,8 +564,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Sellpy", 76, 84, 68, 78, 74, "$", "Sweden", "Thrift/Resale",
             &[], "H&M-backed secondhand marketplace expanding across Europe.", "https://www.sellpy.com"),
 
-        // ==================== ADDITIONAL BRANDS TO REACH 500+ ====================
-        // More Fast Fashion
         brand("Zara Home", 30, 32, 26, 34, 28, "$$$", "Spain", "Fast Fashion",
             &[], "Inditex home brand with parent company sustainability framework.", "https://www.zarahome.com"),
         brand("Lefties", 18, 16, 18, 20, 18, "$", "Spain", "Fast Fashion",
@@ -600,7 +591,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Joe Fresh", 25, 28, 22, 28, 22, "$", "Canada", "Fast Fashion",
             &[], "Loblaw-owned fashion brand with basic sustainability commitments.", "https://www.joefresh.com"),
 
-        // More Luxury
         brand("Max Mara", 35, 38, 30, 40, 32, "$$$$", "Italy", "Luxury",
             &[], "Italian luxury with limited sustainability reporting.", "https://www.maxmara.com"),
         brand("Miu Miu", 34, 36, 30, 38, 32, "$$$$", "Italy", "Luxury",
@@ -662,7 +652,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Mulberry", 45, 48, 40, 50, 42, "$$$", "United Kingdom", "Luxury",
             &[], "British luxury with Made to Last strategy and repair services.", "https://www.mulberry.com"),
 
-        // More Mid-Range
         brand("Zara Man", 28, 30, 25, 35, 22, "$$", "Spain", "Mid-Range",
             &[], "Inditex menswear with parent company sustainability framework.", "https://www.zara.com"),
         brand("H&M Home", 36, 40, 30, 42, 32, "$$", "Sweden", "Mid-Range",
@@ -712,7 +701,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Baum und Pferdgarten", 35, 38, 30, 40, 32, "$$$", "Denmark", "Mid-Range",
             &[], "Danish fashion with some sustainability commitments.", "https://www.baumundpferdgarten.com"),
 
-        // More Sustainable
         brand("Birdsong", 78, 80, 78, 82, 72, "$$$", "United Kingdom", "Sustainable",
             &[], "UK brand using migrant women cooperatives and organic fabrics.", "https://www.birdsong.london"),
         brand("Beaumont Organic", 75, 78, 72, 80, 70, "$$$", "United Kingdom", "Sustainable",
@@ -750,7 +738,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Recover Brands", 76, 82, 70, 80, 72, "$$", "United States", "Sustainable",
             &[], "Makes apparel from recycled materials with transparent supply chain.", "https://www.recoverbrands.com"),
 
-        // More Sportswear / Athletic
         brand("Tracksmith", 38, 40, 34, 42, 36, "$$$", "United States", "Sportswear",
             &[], "Premium running brand with some sustainable material choices.", "https://www.tracksmith.com"),
         brand("Vuori", 40, 42, 36, 44, 38, "$$$", "United States", "Sportswear",
@@ -780,7 +767,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Janji", 55, 58, 52, 60, 50, "$$", "United States", "Sportswear",
             &[], "Running brand with water crisis mission and sustainable materials.", "https://www.janji.com"),
 
-        // More Thrift/Resale
         brand("Savers", 76, 84, 68, 78, 74, "$", "United States", "Thrift/Resale",
             &[], "Large thrift chain keeping clothing out of landfills.", "https://www.savers.com"),
         brand("Value Village", 76, 84, 68, 78, 74, "$", "Canada", "Thrift/Resale",
@@ -802,7 +788,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Curtsy", 72, 80, 64, 74, 70, "$", "United States", "Thrift/Resale",
             &[], "Women's clothing resale app focused on Gen Z.", "https://www.curtsy.com"),
 
-        // Additional brands across categories
         brand("Mara Hoffman", 62, 65, 58, 68, 57, "$$$", "United States", "Sustainable",
             &[], "Designer committed to responsible production and sustainable materials.", "https://www.marahoffman.com"),
         brand("Doen", 48, 52, 44, 52, 44, "$$$", "United States", "Mid-Range",
@@ -852,8 +837,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Woolrich", 35, 38, 30, 40, 32, "$$$", "United States", "Mid-Range",
             &[], "Heritage outdoor brand with some sustainability programs.", "https://www.woolrich.com"),
 
-        // ==================== ADDITIONAL BRANDS (500+ total) ====================
-        // More Fast Fashion
         brand("Shasa", 14, 12, 14, 15, 15, "$", "Mexico", "Fast Fashion",
             &[], "Mexican fast fashion chain with no public sustainability strategy.", "https://www.shasa.com"),
         brand("Renner", 25, 28, 22, 28, 22, "$", "Brazil", "Fast Fashion",
@@ -885,7 +868,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Nuuly Thrift", 76, 84, 68, 78, 74, "$$", "United States", "Thrift/Resale",
             &[], "URBN resale platform for secondhand fashion.", "https://www.nuuly.com"),
 
-        // More Sportswear
         brand("Wilson", 28, 30, 24, 32, 26, "$$", "United States", "Sportswear",
             &[], "Sports equipment and apparel with limited sustainability reporting.", "https://www.wilson.com"),
         brand("Speedo", 30, 32, 26, 34, 28, "$$", "Australia", "Sportswear",
@@ -901,7 +883,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Descente", 30, 32, 26, 34, 28, "$$$", "Japan", "Sportswear",
             &[], "Japanese sportswear with some environmental initiatives.", "https://www.descente.com"),
 
-        // More Outdoor
         brand("Deuter", 44, 48, 40, 48, 40, "$$$", "Germany", "Outdoor/Active",
             &["Bluesign"], "German pack maker with sustainability commitments and PFC-free products.", "https://www.deuter.com"),
         brand("Ortovox", 52, 56, 48, 56, 48, "$$$", "Germany", "Outdoor/Active",
@@ -913,7 +894,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Sea to Summit", 42, 44, 38, 48, 38, "$$$", "Australia", "Outdoor/Active",
             &[], "Australian outdoor gear with growing sustainability commitments.", "https://www.seatosummit.com"),
 
-        // More Luxury
         brand("Versace Jeans Couture", 24, 26, 20, 28, 22, "$$$", "Italy", "Luxury",
             &[], "Versace diffusion line with limited sustainability reporting.", "https://www.versace.com"),
         brand("Emporio Armani", 38, 40, 34, 42, 36, "$$$", "Italy", "Luxury",
@@ -945,7 +925,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Bode", 50, 52, 48, 55, 45, "$$$", "United States", "Luxury",
             &[], "NYC brand using vintage textiles and one-of-a-kind construction.", "https://www.bodenewyork.com"),
 
-        // More Mid-Range
         brand("Cos Homme", 45, 48, 40, 52, 40, "$$$", "Sweden", "Mid-Range",
             &[], "COS menswear collection with parent company sustainability.", "https://www.cos.com"),
         brand("Dockers", 32, 34, 28, 36, 30, "$$", "United States", "Mid-Range",
@@ -1003,7 +982,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Maison Kitsune", 30, 32, 26, 34, 28, "$$$", "France", "Mid-Range",
             &[], "Franco-Japanese brand with limited sustainability reporting.", "https://www.maisonkitsune.com"),
 
-        // Final batch to reach 500+
         brand("Cos Atelier", 48, 52, 44, 52, 44, "$$$", "Sweden", "Mid-Range",
             &[], "COS premium line with focus on quality and longevity.", "https://www.cos.com"),
         brand("Ivy Park", 25, 28, 22, 28, 22, "$$$", "United States", "Sportswear",
@@ -1079,7 +1057,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Gorman", 38, 40, 34, 42, 36, "$$", "Australia", "Mid-Range",
             &[], "Australian brand with some sustainability programs.", "https://www.gormanshop.com.au"),
 
-        // ==================== UAE BRANDS ====================
         brand("The Giving Movement", 72, 75, 68, 78, 67, "$$", "UAE", "Sustainable",
             &["GOTS (partial)"], "Dubai-based activewear brand using recycled materials and donating a garment for every purchase.", "https://www.thegivingmovement.com"),
         brand("DGrade", 78, 82, 74, 80, 76, "$$", "UAE", "Sustainable",
@@ -1121,9 +1098,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Madiyah Al Sharqi", 38, 40, 34, 42, 36, "$$$$", "UAE", "Luxury",
             &[], "Emirati designer with couture collections. Limited sustainability data.", "https://www.madiyahalsharqi.com"),
 
-        // ─── Additional Global Brands ─────────────────────────────────────
-
-        // Sportswear & Athleisure
         brand("Jordan", 30, 28, 32, 30, 30, "$$$", "United States", "Sportswear",
             &[], "Nike's basketball sub-brand. Shares Nike's supply chain with limited standalone sustainability initiatives.", "https://www.nike.com/jordan"),
         brand("Fabletics", 35, 32, 34, 38, 36, "$$", "United States", "Athleisure",
@@ -1143,7 +1117,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Ryderwear", 28, 26, 30, 28, 28, "$$", "Australia", "Sportswear",
             &[], "Australian gym wear brand. Limited sustainability information.", "https://www.ryderwear.com"),
 
-        // Department Store / Mall Brands
         brand("Zara Kids", 28, 30, 22, 32, 28, "$", "Spain", "Fast Fashion",
             &[], "Children's line of Zara with similar sustainability profile to parent brand.", "https://www.zara.com"),
         brand("H&M Kids", 38, 40, 34, 42, 36, "$", "Sweden", "Fast Fashion",
@@ -1179,7 +1152,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Big W", 20, 18, 20, 22, 20, "$", "Australia", "Mass Market",
             &[], "Australian department store. Minimal sustainability commitments for clothing.", "https://www.bigw.com.au"),
 
-        // Luxury Additions
         brand("Rolex", 40, 38, 42, 40, 40, "$$$$", "Switzerland", "Luxury",
             &[], "Swiss luxury watchmaker. Some environmental initiatives but limited clothing sustainability data.", "https://www.rolex.com"),
         brand("Omega", 38, 36, 40, 38, 38, "$$$$", "Switzerland", "Luxury",
@@ -1191,7 +1163,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Goyard", 30, 28, 30, 32, 30, "$$$$", "France", "Luxury",
             &[], "Ultra-exclusive French luxury. Zero sustainability transparency.", ""),
 
-        // Streetwear
         brand("A Bathing Ape", 22, 20, 22, 24, 22, "$$$", "Japan", "Streetwear",
             &[], "Japanese streetwear brand with no sustainability reporting.", "https://bape.com"),
         brand("KITH", 28, 26, 28, 30, 28, "$$$", "United States", "Streetwear",
@@ -1219,9 +1190,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Represent", 30, 28, 30, 32, 30, "$$$", "United Kingdom", "Streetwear",
             &[], "British premium streetwear. Limited sustainability information.", "https://www.representclo.com"),
 
-        // Denim Specialists
-
-        // Underwear & Basics
         brand("Victoria's Secret", 25, 24, 22, 28, 26, "$$", "United States", "Lingerie",
             &[], "Largest US lingerie brand with poor sustainability record and labor concerns.", "https://www.victoriassecret.com"),
         brand("Calvin Klein Underwear", 35, 34, 32, 38, 36, "$$", "United States", "Basics",
@@ -1247,7 +1215,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Skims", 26, 24, 24, 28, 28, "$$", "United States", "Basics",
             &[], "Kim K's shapewear brand. Minimal sustainability information.", "https://www.skims.com"),
 
-        // Children's & Family
         brand("Carter's", 30, 28, 28, 32, 32, "$", "United States", "Children's",
             &[], "America's largest children's wear brand. Some social compliance programs.", "https://www.carters.com"),
         brand("OshKosh B'Gosh", 30, 28, 28, 32, 32, "$", "United States", "Children's",
@@ -1261,7 +1228,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("PatPat", 18, 16, 18, 20, 18, "$", "China", "Children's",
             &[], "Ultra-cheap children's fast fashion with no sustainability practices.", "https://www.patpat.com"),
 
-        // Eyewear
         brand("Ray-Ban", 32, 30, 30, 34, 34, "$$$", "Italy", "Eyewear",
             &[], "EssilorLuxottica brand with limited sustainability transparency.", "https://www.ray-ban.com"),
         brand("Oakley", 30, 28, 30, 32, 30, "$$$", "United States", "Eyewear",
@@ -1269,7 +1235,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Warby Parker", 42, 40, 40, 44, 44, "$$", "United States", "Eyewear",
             &["B Corp"], "B Corp certified eyewear (recertified 2021) with carbon neutrality and a buy-a-pair give-a-pair program.", "https://www.warbyparker.com"),
 
-        // Footwear
         brand("New Balance Kids", 38, 36, 36, 40, 40, "$$", "United States", "Footwear",
             &[], "New Balance children's shoes with parent company sustainability commitments.", "https://www.newbalance.com"),
         brand("Toms", 52, 50, 50, 56, 52, "$$", "United States", "Footwear",
@@ -1283,7 +1248,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Aldo", 30, 28, 28, 32, 32, "$$", "Canada", "Footwear",
             &[], "Canadian footwear retailer. Some sustainability pledges but slow progress.", "https://www.aldoshoes.com"),
 
-        // Middle East / South Asian
         brand("Max Fashion", 28, 26, 26, 30, 30, "$", "UAE", "Fast Fashion",
             &[], "Landmark Group budget fashion brand popular across Middle East and South Asia.", "https://www.maxfashion.com"),
         brand("Splash", 26, 24, 24, 28, 28, "$", "UAE", "Fast Fashion",
@@ -1315,7 +1279,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Sapphire", 28, 26, 26, 30, 30, "$$", "Pakistan", "Mid-Range",
             &[], "Pakistani fashion retailer. Limited sustainability reporting.", "https://www.sapphireonline.pk"),
 
-        // Asian Brands
         brand("Uniqlo Kids", 42, 44, 38, 44, 42, "$", "Japan", "Mid-Range",
             &[], "Uniqlo's children's range. Benefits from parent's sustainability programs.", "https://www.uniqlo.com"),
         brand("GU", 30, 28, 28, 32, 32, "$", "Japan", "Fast Fashion",
@@ -1329,7 +1292,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Bosideng", 32, 30, 30, 34, 34, "$$", "China", "Outerwear",
             &[], "Chinese down jacket specialist. Some environmental compliance.", "https://www.bosideng.com"),
 
-        // African Brands
         brand("Mr Price", 24, 22, 22, 26, 26, "$", "South Africa", "Fast Fashion",
             &[], "South African budget retailer. Some community programs but poor sustainability.", "https://www.mrprice.com"),
         brand("Woolworths SA", 48, 50, 44, 50, 48, "$$", "South Africa", "Mid-Range",
@@ -1345,13 +1307,11 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Maxhosa", 48, 46, 46, 50, 50, "$$$", "South Africa", "Sustainable",
             &[], "South African knitwear brand celebrating Xhosa patterns with local production.", "https://www.maxhosa.africa"),
 
-        // Latin American Brands
         brand("Falabella", 30, 28, 28, 32, 32, "$$", "Chile", "Department Store",
             &[], "Major Latin American retailer with growing sustainability program.", "https://www.falabella.com"),
         brand("Liverpool", 28, 26, 26, 30, 30, "$$", "Mexico", "Department Store",
             &[], "Mexican department store with limited sustainability reporting.", "https://www.liverpool.com.mx"),
 
-        // DTC / Internet Brands
         brand("Shein Kids", 12, 10, 10, 14, 14, "$", "China", "Fast Fashion",
             &[], "SHEIN's children's line with same poor sustainability and labor practices.", "https://www.shein.com"),
         brand("Halara", 18, 16, 16, 20, 20, "$", "China", "Fast Fashion",
@@ -1385,7 +1345,6 @@ pub fn load_brands() -> Vec<BrandRating> {
         brand("Passenger", 58, 60, 54, 62, 56, "$$", "United Kingdom", "Sustainable",
             &[], "UK outdoor brand with B Corp goals, organic materials, and tree planting.", "https://www.passenger-clothing.com"),
 
-        // Workwear & Uniforms
         brand("Caterpillar", 28, 26, 26, 30, 30, "$$", "United States", "Workwear",
             &[], "Construction equipment brand's workwear line. Limited fashion sustainability.", "https://www.catfootwear.com"),
         brand("Wrangler Workwear", 35, 36, 32, 38, 34, "$$", "United States", "Workwear",

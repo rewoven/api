@@ -1,6 +1,3 @@
-// build_rationale and the brand() data constructor legitimately take many
-// positional args; the stats query returns a small internal tuple. Grouping
-// these into structs would hurt readability more than help.
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::type_complexity)]
 
@@ -23,8 +20,6 @@ use state::AppState;
 
 const DB_PATH: &str = "rewoven.db";
 
-/// The data routes, with version-relative paths. Mounted under both `/api`
-/// (legacy, kept for existing clients) and `/v1` (the canonical, versioned base).
 fn api_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/brands", get(handlers::brands::list_brands))
@@ -52,10 +47,8 @@ fn api_routes() -> Router<Arc<AppState>> {
 async fn main() {
     tracing_subscriber::fmt::init();
 
-    // Connection pool (replaces single Mutex<Connection>)
     let pool = db::create_pool(DB_PATH).expect("Failed to create connection pool");
 
-    // Init and seed using one connection from the pool
     {
         let conn = pool.get().expect("Failed to get connection for init");
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
@@ -66,7 +59,6 @@ async fn main() {
         let count = db::get_brand_count(&conn).unwrap_or(0);
         tracing::info!("Database has {} brands", count);
 
-        // Seed barcode prefixes (idempotent - only inserts new ones)
         match db::seed_barcode_prefixes(&conn, barcode_seeds::SEED_PREFIXES) {
             Ok(inserted) => {
                 let total = db::get_barcode_prefix_count(&conn).unwrap_or(0);
@@ -83,11 +75,8 @@ async fn main() {
 
     let state = Arc::new(AppState { db: pool });
 
-    // Per-IP rate limiter (public API protection). Generous, so the extension
-    // and site stay well under it; abusive scripts get 429'd.
     let limiter = middleware::new_limiter(120);
     {
-        // Periodically drop idle per-IP buckets so memory stays bounded.
         let l = limiter.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(Duration::from_secs(600));
@@ -98,7 +87,6 @@ async fn main() {
         });
     }
 
-    // CORS locked to known origins
     let origins = [
         "https://rewovenapp.com",
         "https://www.rewovenapp.com",
@@ -122,11 +110,9 @@ async fn main() {
         .route("/health", get(handlers::brands::health))
         .route("/openapi.json", get(handlers::docs::openapi_json))
         .route("/docs", get(handlers::docs::swagger_ui))
-        .nest("/api", api_routes()) // legacy base, kept working
-        .nest("/v1", api_routes()) // canonical versioned base
+        .nest("/api", api_routes())
+        .nest("/v1", api_routes())
         .with_state(state)
-        // Caching (Cache-Control + ETag/304) then per-IP rate limiting, with
-        // CORS outermost so preflight is handled first.
         .layer(axum::middleware::from_fn(middleware::cache_and_etag))
         .layer(axum::middleware::from_fn_with_state(
             limiter.clone(),
