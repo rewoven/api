@@ -40,7 +40,7 @@ fn get_materials_data() -> &'static Vec<MaterialImpact> {
             MaterialImpact { name: "Seacell".into(), slug: "seacell".into(), category: "Innovative".into(), co2_kg_per_kg: 1.5, water_liters_per_kg: 300.0, biodegradable: true, recyclable: false, sustainability_score: 80, description: "Made from seaweed and wood cellulose. Naturally antibacterial with minimal processing.".into() },
             MaterialImpact { name: "Orange Fiber".into(), slug: "orange-fiber".into(), category: "Innovative".into(), co2_kg_per_kg: 2.0, water_liters_per_kg: 250.0, biodegradable: true, recyclable: false, sustainability_score: 82, description: "Made from citrus juice byproducts. Turns waste into luxury silk-like fabric.".into() },
         ];
-        materials.sort_by(|a, b| b.sustainability_score.cmp(&a.sustainability_score));
+        materials.sort_by_key(|m| std::cmp::Reverse(m.sustainability_score));
         materials
     })
 }

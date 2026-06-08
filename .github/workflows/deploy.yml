@@ -1,10 +1,5 @@
 name: Deploy
 
-# Auto-deploys to the VPS on every push to main. Requires three repo secrets
-# (Settings -> Secrets and variables -> Actions):
-#   VPS_HOST     e.g. 185.197.250.205
-#   VPS_USER     e.g. root
-#   VPS_SSH_KEY  a private SSH key whose public key is in the VPS authorized_keys
 on:
   push:
     branches: [main]
@@ -13,8 +8,20 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
     steps:
+      - name: Check for VPS secrets
+        id: cfg
+        run: |
+          if [ -z "$VPS_HOST" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "VPS secrets not configured - skipping deploy (expected until VPS_HOST/VPS_USER/VPS_SSH_KEY are added)."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Deploy over SSH
+        if: steps.cfg.outputs.ready == 'true'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -27,7 +34,7 @@ jobs:
             cd /opt/rewoven-api
             git fetch origin
             git reset --hard origin/main
-            cargo build --release            # if this fails, the service is NOT restarted
+            cargo build --release
             systemctl restart rewoven-api
             sleep 2
             systemctl is-active rewoven-api
