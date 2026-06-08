@@ -1,11 +1,6 @@
 # Rewoven API
 
-A fast REST API serving sustainability ratings for 635 fashion brands.
-
-- **Interactive docs:** `GET /docs` (Swagger UI) and `GET /openapi.json` (OpenAPI 3.0 spec)
-- **Versioning:** routes are served under `/v1/...` (canonical) and `/api/...` (legacy alias, kept working). Examples below show `/api` but `/v1` is identical.
-- **Rate limiting:** ~120 requests/min per IP (returns `429` when exceeded).
-- **Caching:** GET responses send `Cache-Control` + an `ETag`; send `If-None-Match` to get a `304 Not Modified` and skip the payload.
+A fast REST API serving sustainability ratings for 635 fashion brands
 
 [Docs](https://rewovenapp.com/api)
 
@@ -18,7 +13,7 @@ cargo build --release
 ./target/release/rewoven-api
 ```
 
-The server starts on `http://0.0.0.0:3000`. Run the tests with `cargo test`.
+The server starts on `http://0.0.0.0:3000`. Run the tests with `cargo test`
 
 ## API Endpoints
 
@@ -72,7 +67,7 @@ Returns the highest-rated brands sorted by overall score
 ```
 GET /api/brands/worst?limit=10
 ```
-Returns the lowest-rated brands sorted by overall score.
+Returns the lowest-rated brands sorted by overall score
 
 ### Compare Brands
 ```
@@ -84,13 +79,13 @@ Compare multiple brands side by side. Pass comma separated slugs
 ```
 GET /api/categories
 ```
-Lists all categories with average scores across all rating dimensions.
+Lists all categories with average scores across all rating dimensions
 
 ### Statistics
 ```
 GET /api/stats
 ```
-Overall statistics including total brands, average/median scores, grade distribution, category breakdown, and price range distribution.
+Overall statistics including total brands, average/median scores, grade distribution, category breakdown, and price range distribution
 
 ## Brand Rating Fields
 
@@ -117,11 +112,11 @@ Overall statistics including total brands, average/median scores, grade distribu
 
 ## Deploying to VPS
 
-**Automated (recommended):** every push to `main` triggers `.github/workflows/deploy.yml`,
+Automated: every push to `main` triggers `.github/workflows/deploy.yml`,
 which SSHes to the VPS, pulls, rebuilds, and restarts the service. It needs three
-repo secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`.
+repo secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`
 
-**Manual:** run `./scripts/deploy.sh` from your machine (set `VPS=root@host` to
+Manual run `./scripts/deploy.sh` from your machine (set `VPS=root@host` to
 override the default), or on the VPS directly:
 ```bash
 cd /opt/rewoven-api && git fetch origin && git reset --hard origin/main \
