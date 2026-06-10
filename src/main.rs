@@ -14,7 +14,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use std::sync::Arc;
 use std::time::Duration;
-use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::cors::{Any, CorsLayer};
 
 use state::AppState;
 
@@ -32,6 +32,12 @@ fn api_routes() -> Router<Arc<AppState>> {
             "/brands/{slug}/alternatives",
             get(handlers::brands::get_alternatives),
         )
+        .route(
+            "/brands/{slug}/badge.svg",
+            get(handlers::brands::brand_badge),
+        )
+        .route("/export.json", get(handlers::export::export_json))
+        .route("/export.csv", get(handlers::export::export_csv))
         .route("/materials", get(handlers::materials::get_materials))
         .route("/materials/{slug}", get(handlers::materials::get_material))
         .route("/categories", get(handlers::stats::get_categories))
@@ -54,6 +60,7 @@ async fn main() {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
             .ok();
         db::init_db(&conn).expect("Failed to initialize database");
+        db::run_migrations(&conn).expect("Failed to run migrations");
         let brands = brand_data::load_brands();
         db::seed_db(&conn, &brands).expect("Failed to seed database");
         let count = db::get_brand_count(&conn).unwrap_or(0);
@@ -87,24 +94,16 @@ async fn main() {
         });
     }
 
-    let origins = [
-        "https://rewovenapp.com",
-        "https://www.rewovenapp.com",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:5500",
-        "http://127.0.0.1:5500",
-    ];
+    // Fully public data API: any origin may read it. Abuse is handled by the
+    // per-IP rate limiter, not by CORS.
     let cors = CorsLayer::new()
-        .allow_origin(AllowOrigin::list(
-            origins.iter().filter_map(|o| o.parse().ok()),
-        ))
+        .allow_origin(Any)
         .allow_methods([
             axum::http::Method::GET,
             axum::http::Method::POST,
             axum::http::Method::OPTIONS,
         ])
-        .allow_headers([axum::http::header::CONTENT_TYPE]);
+        .allow_headers(Any);
 
     let app = Router::new()
         .route("/health", get(handlers::brands::health))

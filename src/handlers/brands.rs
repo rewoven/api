@@ -1,5 +1,7 @@
 use axum::{
     extract::{Path, Query, State},
+    http::header,
+    response::IntoResponse,
     Json,
 };
 use std::sync::Arc;
@@ -8,6 +10,66 @@ use crate::db;
 use crate::error::AppError;
 use crate::models::*;
 use crate::state::AppState;
+
+fn grade_color(grade: &str) -> &'static str {
+    match grade.chars().next() {
+        Some('A') => {
+            if grade == "A+" {
+                "#2da44e"
+            } else {
+                "#4c9a2a"
+            }
+        }
+        Some('B') => "#a4a61d",
+        Some('C') => "#dfb317",
+        Some('D') => "#fe7d37",
+        _ => "#e05d44",
+    }
+}
+
+pub async fn brand_badge(
+    State(state): State<Arc<AppState>>,
+    Path(slug): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let conn = state.db.get()?;
+    let slug_lower = slug.to_lowercase();
+    let brand = match db::get_brand_by_slug(&conn, &slug_lower)? {
+        Some(b) => b,
+        None => return Err(AppError::NotFound(format!("Brand '{}' not found", slug))),
+    };
+
+    let label = "rewoven";
+    let value = format!("{} \u{00b7} {}/100", brand.grade, brand.overall_score);
+    let color = grade_color(&brand.grade);
+    let label_w = 7 * label.len() + 10;
+    let value_w = 7 * value.chars().count() + 10;
+    let total_w = label_w + value_w;
+
+    let svg = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{total_w}" height="20" role="img" aria-label="{label}: {value}">
+<title>{label}: {value}</title>
+<rect width="{label_w}" height="20" fill="#555"/>
+<rect x="{label_w}" width="{value_w}" height="20" fill="{color}"/>
+<g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
+<text x="{label_x}" y="14">{label}</text>
+<text x="{value_x}" y="14">{value}</text>
+</g>
+</svg>"##,
+        total_w = total_w,
+        label_w = label_w,
+        value_w = value_w,
+        color = color,
+        label = label,
+        value = value,
+        label_x = label_w / 2,
+        value_x = label_w + value_w / 2,
+    );
+
+    Ok((
+        [(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+        svg,
+    ))
+}
 
 fn levenshtein(a: &str, b: &str) -> usize {
     let a_len = a.len();

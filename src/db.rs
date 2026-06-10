@@ -22,7 +22,7 @@ pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
             certifications TEXT NOT NULL DEFAULT '[]',
             summary TEXT NOT NULL DEFAULT '',
             website TEXT NOT NULL DEFAULT '',
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            updated_at TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS idx_brands_category ON brands(category);
         CREATE INDEX IF NOT EXISTS idx_brands_score ON brands(overall_score);
@@ -33,13 +33,16 @@ pub fn init_db(conn: &Connection) -> Result<(), rusqlite::Error> {
         -- assigned to the manufacturer. We map prefix → brand_slug so
         -- /api/barcode/{upc} can look up the brand without an external API.
         --
-        -- source:    'manual'         curated by us, high confidence
-        --            'gs1'            looked up from GS1's public registry
-        --            'crowdsourced'   submitted by an app user
-        --            'partner'        added via partner integration
+        -- source:    'seed-unverified' shipped in the seed file, NOT verified
+        --                              against GS1 allocation - held below the
+        --                              return threshold until verified
+        --            'gs1'             verified against GS1's public registry
+        --            'crowdsourced'    promoted from repeated user submissions
+        --            'partner'         added via partner integration
         --
-        -- confidence: 0-100 - we only return matches with confidence >= 50
-        --             so a single crowdsourced report can't pollute the data.
+        -- confidence: 0-100 - we only return matches with confidence >= 50,
+        --             so unverified seeds and single crowdsourced reports
+        --             can never reach API consumers.
         CREATE TABLE IF NOT EXISTS barcode_prefixes (
             prefix TEXT PRIMARY KEY,
             brand_slug TEXT NOT NULL,
@@ -529,12 +532,52 @@ pub fn seed_barcode_prefixes(
 
         let res = conn.execute(
             "INSERT OR IGNORE INTO barcode_prefixes (prefix, brand_slug, source, confidence, notes)
-             VALUES (?1, ?2, 'manual', 100, ?3)",
+             VALUES (?1, ?2, 'seed-unverified', 40, ?3)",
             params![prefix, slug, notes],
         )?;
         inserted += res;
     }
     Ok(inserted)
+}
+
+// One-shot data migrations, keyed so they apply exactly once per database.
+// 001: seed-time datetime('now') stamps were being served as review dates -
+//      clear them; updated_at must only ever hold a real review date.
+// 002: seed-file barcode prefixes were stored at confidence 100 ('manual')
+//      despite never being verified against GS1 allocation - drop them below
+//      the confidence-50 return threshold until individually verified.
+pub fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (
+            key TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );",
+    )?;
+
+    let migrations: &[(&str, &str)] = &[
+        ("001_clear_seed_updated_at", "UPDATE brands SET updated_at = '';"),
+        (
+            "002_quarantine_unverified_barcode_seeds",
+            "UPDATE barcode_prefixes SET source = 'seed-unverified', confidence = 40 WHERE source = 'manual';",
+        ),
+    ];
+
+    for (key, sql) in migrations {
+        let applied: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM schema_migrations WHERE key = ?1",
+            params![key],
+            |r| r.get(0),
+        )?;
+        if applied == 0 {
+            conn.execute_batch(sql)?;
+            conn.execute(
+                "INSERT INTO schema_migrations (key) VALUES (?1)",
+                params![key],
+            )?;
+            tracing::info!("Applied migration {}", key);
+        }
+    }
+    Ok(())
 }
 
 pub fn submit_crowdsourced_prefix(

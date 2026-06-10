@@ -33,7 +33,7 @@ pub struct BrandRating {
     pub summary: String,
     pub website: String,
 
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub updated_at: String,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -55,39 +55,39 @@ fn overall_band(score: u8) -> &'static str {
 
 fn environmental_note(score: u8) -> &'static str {
     match score {
-        65..=100 => "strong use of lower-impact materials and documented action to cut emissions, water use, and waste",
-        50..=64 => "some lower-impact materials or efficiency efforts, with clear room to improve",
-        30..=49 => "limited publicly documented action on materials, emissions, water, or waste relative to peers",
-        _ => "little publicly available evidence of meaningful action on materials, emissions, water, or waste",
+        65..=100 => "our review weighed strong use of lower-impact materials and documented action on emissions, water use, and waste",
+        50..=64 => "our review found some lower-impact materials or efficiency efforts, with clear room to improve",
+        30..=49 => "our review found limited public disclosure on materials, emissions, water, or waste to weigh",
+        _ => "our review found little public disclosure on materials, emissions, water, or waste to weigh",
     }
 }
 
 fn labor_note(score: u8) -> &'static str {
     match score {
-        65..=100 => "well-documented labor standards and supply-chain oversight",
-        50..=64 => "some labor commitments with partial supply-chain oversight",
-        30..=49 => "limited public disclosure of labor standards or supply-chain auditing",
-        _ => {
-            "little publicly available evidence of enforced labor standards or independent auditing"
-        }
+        65..=100 => "our review weighed well-documented labor standards and supply-chain oversight",
+        50..=64 => "our review found some labor commitments with partial supply-chain oversight",
+        30..=49 => "our review found limited public disclosure of labor standards or supply-chain auditing to weigh",
+        _ => "our review found little public disclosure of labor standards or independent auditing to weigh",
     }
 }
 
 fn transparency_note(score: u8) -> &'static str {
     match score {
-        65..=100 => "detailed public reporting and supply-chain traceability",
-        50..=64 => "partial public reporting on its supply chain",
-        30..=49 => "limited public reporting or traceability",
-        _ => "minimal public disclosure of its supply chain or practices",
+        65..=100 => "our review weighed detailed public reporting and supply-chain traceability",
+        50..=64 => "our review found partial public reporting on its supply chain",
+        30..=49 => "our review found limited public reporting or traceability to weigh",
+        _ => "our review found minimal public disclosure of its supply chain or practices to weigh",
     }
 }
 
 fn animal_note(score: u8) -> &'static str {
     match score {
-        65..=100 => "clear animal-welfare policies or avoidance of high-harm materials",
-        50..=64 => "some animal-welfare policies in place",
-        30..=49 => "limited animal-welfare policy disclosure",
-        _ => "little publicly available animal-welfare policy",
+        65..=100 => {
+            "our review weighed clear animal-welfare policies or avoidance of high-harm materials"
+        }
+        50..=64 => "our review found some animal-welfare policies in place",
+        30..=49 => "our review found limited animal-welfare policy disclosure to weigh",
+        _ => "our review found little animal-welfare policy disclosure to weigh",
     }
 }
 
@@ -120,7 +120,8 @@ This composite is the equal-weighted average of four dimensions:\n\n\
 • Transparency ({transparency}/100): {trans}.\n\
 • Animal welfare ({animal_welfare}/100): {anim}.\n\n\
 {certs_line} Assessed within the {category} category. {summary}\n\n\
-This rating is Rewoven's editorial assessment based on publicly available information and may not reflect a brand's most recent changes. \
+This explanation is generated automatically from Rewoven's dimension scores for this brand. \
+The rating is Rewoven's editorial assessment based on publicly available information reviewed at the time of assessment and may not reflect a brand's most recent changes. \
 It is an expression of opinion, not a statement of fact, and is provided for general information only. \
 Brands may request a review at arhan@rewovenapp.com.",
         name = name,
@@ -268,6 +269,8 @@ mod tests {
         assert!(r.contains("Luxury"));
         assert!(r.contains("B Corp"));
         assert!(r.contains("opinion"));
+        assert!(r.contains("generated automatically"));
+        assert!(r.contains("our review found"));
         assert!(r.contains("arhan@rewovenapp.com"));
     }
 
@@ -301,5 +304,6 @@ mod tests {
         let json = serde_json::to_string(&b).unwrap();
         assert!(!json.contains("rationale"));
         assert!(!json.contains("sources"));
+        assert!(!json.contains("updated_at"));
     }
 }

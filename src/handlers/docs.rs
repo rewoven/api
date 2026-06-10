@@ -30,8 +30,9 @@ const OPENAPI_SPEC: &str = r##"{
   "openapi": "3.0.3",
   "info": {
     "title": "Rewoven API",
-    "version": "1.0.0",
-    "description": "Public REST API for fashion brand sustainability ratings and textile material impact data. Ratings are Rewoven's editorial assessments (opinion). See https://rewovenapp.com/methodology/."
+    "version": "1.1.0",
+    "description": "Public REST API for fashion brand sustainability ratings and textile material impact data. Ratings are Rewoven's editorial assessments (opinion). See https://rewovenapp.com/methodology/. Data is licensed CC BY 4.0 - attribute 'Rewoven (rewovenapp.com)'. Bulk download: /v1/export.json or /v1/export.csv.",
+    "license": { "name": "CC BY 4.0", "url": "https://creativecommons.org/licenses/by/4.0/" }
   },
   "servers": [{ "url": "https://api.rewovenapp.com" }],
   "tags": [
@@ -75,6 +76,9 @@ const OPENAPI_SPEC: &str = r##"{
     "/v1/brands/{slug}/alternatives": { "get": { "tags": ["Brands"], "summary": "More sustainable alternatives", "parameters": [{ "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 5 } }], "responses": { "200": { "description": "Alternatives" } } } },
     "/v1/materials": { "get": { "tags": ["Materials"], "summary": "List textile materials with impact data", "responses": { "200": { "description": "Materials" } } } },
     "/v1/materials/{slug}": { "get": { "tags": ["Materials"], "summary": "Get one material", "parameters": [{ "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Material" }, "404": { "description": "Not found" } } } },
+    "/v1/brands/{slug}/badge.svg": { "get": { "tags": ["Brands"], "summary": "Embeddable SVG grade badge for a brand", "parameters": [{ "name": "slug", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "SVG badge", "content": { "image/svg+xml": {} } }, "404": { "description": "Not found" } } } },
+    "/v1/export.json": { "get": { "tags": ["Stats"], "summary": "Bulk download of all brand ratings (JSON, CC BY 4.0)", "responses": { "200": { "description": "All ratings with license metadata" } } } },
+    "/v1/export.csv": { "get": { "tags": ["Stats"], "summary": "Bulk download of all brand ratings (CSV, CC BY 4.0)", "responses": { "200": { "description": "CSV file", "content": { "text/csv": {} } } } } },
     "/v1/categories": { "get": { "tags": ["Stats"], "summary": "Category averages", "responses": { "200": { "description": "Categories" } } } },
     "/v1/stats": { "get": { "tags": ["Stats"], "summary": "Dataset statistics", "responses": { "200": { "description": "Stats" } } } },
     "/v1/barcode/{upc}": { "get": { "tags": ["Barcode"], "summary": "Look up a brand by barcode", "parameters": [{ "name": "upc", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Brand match" }, "404": { "description": "No match" } } } }
@@ -91,7 +95,7 @@ const OPENAPI_SPEC: &str = r##"{
           "price_range": { "type": "string" }, "country": { "type": "string" }, "category": { "type": "string" },
           "certifications": { "type": "array", "items": { "type": "string" } },
           "summary": { "type": "string" }, "website": { "type": "string" },
-          "updated_at": { "type": "string", "description": "When this rating was last reviewed" },
+          "updated_at": { "type": "string", "description": "Date this rating was last individually reviewed; omitted until a review date is recorded" },
           "sources": { "type": "array", "items": { "type": "string" }, "description": "Citation URLs (when available)" },
           "rationale": { "type": "string", "description": "Per-dimension explanation; only on the single-brand endpoint" }
         }
